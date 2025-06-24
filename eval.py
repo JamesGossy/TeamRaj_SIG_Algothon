@@ -3,103 +3,146 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from main import getMyPosition as getPosition
+import importlib
+import main
 
-nInst = 50
-nt = 0
-commRate = 0.0005
-dlrPosLimit = 10000
+# ─── User parameters ────────────────────────────────────────────────
+prices_file      = "prices.txt"
+test_days        = 200
+comm_rate        = 0.0005
+dollar_pos_limit = 10000.0
 
-def loadPrices(fn):
-    global nt, nInst
-    df = pd.read_csv(fn, sep='\s+', header=None, index_col=None)
-    (nt, nInst) = df.shape
-    return df.values.T
+# Amount of per-price noise to inject into the *execution* price (e.g. 0.01 = 1%)
+noise_pct        = 0.001
+random_seed      = 42
+# ────────────────────────────────────────────────────────────────────
 
-pricesFile = "prices.txt"
-prcAll = loadPrices(pricesFile)
-print(f"Loaded {nInst} instruments for {nt} days")
 
-def calcPL(prcHist, numTestDays):
+def load_prices(fn):
+    df = pd.read_csv(fn, sep=r'\s+', header=None)
+    prc = df.values.T
+    print(f"Loaded {prc.shape[0]} instruments for {prc.shape[1]} days")
+    return prc
+
+
+def calcPL(prcHist: np.ndarray,
+           numTestDays: int,
+           noise_pct: float = 0.0,
+           seed: int | None = None):
+    """
+    Calculate P/L series, injecting noise *only* on the execution price each day.
+    Returns: (mu, ret, sigma, sharpe, totDVolume, dailyPL_array)
+    """
+    # prepare RNG if needed
+    rng = np.random.RandomState(seed) if noise_pct and seed is not None else None
+
+    prc_exec = prcHist            # true prices for execution & P/L
+    nInst, nt = prc_exec.shape
+
     cash = 0.0
     curPos = np.zeros(nInst)
     totDVolume = 0.0
     value = 0.0
-    todayPLL = []
-    (_, nt_local) = prcHist.shape
-    startDay = nt_local + 1 - numTestDays
+    dailyPL = []
 
-    for t in range(startDay, nt_local + 1):
-        prcHistSoFar = prcHist[:, :t]
-        curPrices = prcHistSoFar[:, -1]
+    start_day = nt - numTestDays + 1
+    for t in range(start_day, nt + 1):
+        # 1) True execution price for today
+        price_ex = prc_exec[:, t-1]
 
-        if t < nt_local:
-            # Trading, do not do it on the very last day of the test
-            newPosOrig = getPosition(prcHistSoFar)
-            posLimits = np.array([int(x) for x in dlrPosLimit / curPrices])
-            newPos = np.clip(newPosOrig, -posLimits, posLimits)
-            deltaPos = newPos - curPos
-            dvolumes = curPrices * np.abs(deltaPos)
-            dvolume = np.sum(dvolumes)
-            totDVolume += dvolume
-            comm = dvolume * commRate
-            cash -= curPrices.dot(deltaPos) + comm
+        # 2) True history (no corruption)
+        hist_true = prc_exec[:, :t]
+
+        # 3) Simulate noisy *fill* price for today only
+        if noise_pct and rng is not None:
+            noise = noise_pct * rng.randn(nInst)
+            # Option A: multiplicative Gaussian shock
+            price_sig = price_ex * (1.0 + noise)
+
+            # Option B: log-normal shock (uncomment if preferred)
+            # price_sig = price_ex * np.exp(noise_pct * rng.randn(nInst))
         else:
-            newPos = np.array(curPos)
+            price_sig = price_ex.copy()
 
-        curPos = np.array(newPos)
-        posValue = curPos.dot(curPrices)
+        # 4) Build the history fed to your strategy
+        hist_sig = hist_true.copy()
+        hist_sig[:, -1] = price_sig
+
+        # 5) Call your algo on the noisy history
+        if t < nt:
+            rawPos = main.getMyPosition(hist_sig)
+
+            # enforce dollar-limit at the *true* execution price
+            pos_limit = np.floor(dollar_pos_limit / price_ex).astype(int)
+            newPos = np.clip(rawPos, -pos_limit, pos_limit)
+
+            # settle trades at true execution price
+            delta = newPos - curPos
+            traded = np.abs(delta) * price_ex
+            totDVolume += traded.sum()
+            cash -= price_ex.dot(delta) + comm_rate * traded.sum()
+        else:
+            newPos = curPos.copy()
+
+        # 6) Update position and mark-to-market
+        curPos = newPos.copy()
+        posValue = curPos.dot(price_ex)
         todayPL = cash + posValue - value
         value = cash + posValue
 
-        if t > startDay:
-            ret = value / totDVolume if totDVolume > 0 else 0.0
-            print(f"Day {t} value: {value:.2f} todayPL: ${todayPL:.2f} $-traded: {totDVolume:.0f} return: {ret:.5f}")
-            todayPLL.append(todayPL)
+        # 7) Record P/L (skip the very first day)
+        if t > start_day:
+            dailyPL.append(todayPL)
 
-    pll = np.array(todayPLL)
-    plmu = np.mean(pll)
-    plstd = np.std(pll)
-    annSharpe = np.sqrt(249) * plmu / plstd if plstd > 0 else 0.0
+    pll   = np.array(dailyPL)
+    mu    = pll.mean()
+    sigma = pll.std(ddof=0)
+    sharpe = np.sqrt(249) * mu / sigma if sigma > 0 else 0.0
+    ret    = value / totDVolume if totDVolume > 0 else 0.0
 
-    # return stats plus the daily P/L array
-    return plmu, (value / totDVolume if totDVolume > 0 else 0.0), plstd, annSharpe, totDVolume, pll
+    return mu, ret, sigma, sharpe, totDVolume, pll
 
-# run the back-test
-meanpl, ret, plstd, sharpe, dvol, pll = calcPL(prcAll, 200)
-score = meanpl - 0.1 * plstd
 
-print("=====")
-print(f"mean(PL): {meanpl:.1f}")
-print(f"return: {ret:.5f}")
-print(f"StdDev(PL): {plstd:.2f}")
-print(f"annSharpe(PL): {sharpe:.2f}")
-print(f"totDvolume: {dvol:.0f}")
-print(f"Score: {score:.2f}")
+if __name__ == "__main__":
+    prcAll = load_prices(prices_file)
 
-# ————— PLOTS —————
-days = np.arange(1, len(pll) + 1)
+    # ─── Regular test ────────────────────────────────────────────────
+    mu, ret, sigma, sharpe, dvol, pll = calcPL(
+        prcAll, test_days, noise_pct=0.0
+    )
+    score = mu - 0.1 * sigma
+    print("\n=== Regular Test ===")
+    print(f"Score: {score:.2f}, meanPL: {mu:.1f}, return: {ret:.5f}, "
+          f"σ: {sigma:.2f}, annSharpe: {sharpe:.2f}")
 
-plt.figure(figsize=(10, 4))
-plt.bar(days, pll, width=1.0)
-plt.title('Daily P/L')
-plt.xlabel('Test Day')
-plt.ylabel('P/L ($)')
-plt.grid(True)
+    # ─── Reset strategy state ─────────────────────────────────────────
+    importlib.reload(main)
 
-plt.figure(figsize=(10, 4))
-plt.plot(days, np.cumsum(pll), linewidth=1)
-plt.title('Cumulative P/L')
-plt.xlabel('Test Day')
-plt.ylabel('Cumulative P/L ($)')
-plt.grid(True)
+    # ─── Noise test ──────────────────────────────────────────────────
+    mu_n, ret_n, sigma_n, sharpe_n, dvol_n, pll_n = calcPL(
+        prcAll, test_days, noise_pct=noise_pct, seed=random_seed
+    )
+    score_n = mu_n - 0.1 * sigma_n
+    print(f"\n=== Noise Test (noise_pct={noise_pct}) ===")
+    print(f"Score: {score_n:.2f}, meanPL: {mu_n:.1f}, return: {ret_n:.5f}, "
+          f"σ: {sigma_n:.2f}, annSharpe: {sharpe_n:.2f}")
 
-plt.figure(figsize=(8, 4))
-plt.hist(pll, bins=30, edgecolor='black')
-plt.title('Distribution of Daily P/L')
-plt.xlabel('Daily P/L ($)')
-plt.ylabel('Frequency')
-plt.grid(True)
+    # ─── Plot results of the noise test ───────────────────────────────
+    days = np.arange(1, len(pll_n) + 1)
+    plt.figure(figsize=(10,4))
+    plt.bar(days, pll_n, width=1.0)
+    plt.title(f'Daily P/L (noise_pct={noise_pct})')
+    plt.xlabel('Test Day'); plt.ylabel('P/L ($)'); plt.grid(True)
 
-plt.tight_layout()
-plt.show()
+    plt.figure(figsize=(10,4))
+    plt.plot(days, np.cumsum(pll_n), lw=1)
+    plt.title(f'Cumulative P/L (noise_pct={noise_pct})')
+    plt.xlabel('Test Day'); plt.ylabel('Cumulative P/L ($)'); plt.grid(True)
+
+    plt.figure(figsize=(8,4))
+    plt.hist(pll_n, bins=30, edgecolor='black')
+    plt.title(f'Distribution of Daily P/L (noise_pct={noise_pct})')
+    plt.xlabel('Daily P/L ($)'); plt.ylabel('Frequency'); plt.grid(True)
+
+    plt.tight_layout()
+    plt.show()

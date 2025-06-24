@@ -12,7 +12,6 @@ COMM_RATE     = 0.0005    # commission rate (5 bps)
 POS_LIMIT_USD = 10000
 TRAIN_DAYS    = 250
 TEST_DAYS     = 50
-NOISE_PCT     = 2       # ±2% daily-return noise
 
 # ───────── data loader ─────────
 def loadPrices(fn):
@@ -63,18 +62,6 @@ def walkForward(prc):
         start += TEST_DAYS
     return np.array(scores)
 
-def noiseTest(prc, repeats=10):
-    rng = np.random.default_rng(42)
-    vals = []
-    for _ in range(repeats):
-        ret = prc[:,1:] / prc[:,:-1] - 1
-        noisy = np.concatenate([
-            prc[:,:1],
-            prc[:,:-1] * (1 + ret * (1 + rng.normal(0, NOISE_PCT/100, ret.shape)))
-        ], axis=1)
-        vals.append(walkForward(noisy).mean())
-    return float(np.mean(vals))
-
 def shuffleTest(prc, repeats=20):
     rng = np.random.default_rng(42)
     vals = []
@@ -94,17 +81,13 @@ if __name__ == "__main__":
     wts = np.arange(1, len(wf_scores)+1)
     tw_mean = (wf_scores * wts).sum() / wts.sum()
 
-    # 2) Noise
-    noise_mean = noiseTest(prcAll)
-
-    # 3) Shuffle
+    # 2) Shuffle
     shuffle_mean = shuffleTest(prcAll)
 
     # ───────── summary display ─────────
     print("========== Evaluation Summary ==========")
     print(f"Walk-forward folds : {wf_scores.round(2)}")
     print(f"Time-weighted mean : {tw_mean:.2f}\n")
-    print("---- Robustness Tests ----")
-    print(f"Noise test (±{NOISE_PCT}%)   : {noise_mean:+.2f}")
+    print("---- Robustness Test ----")
     print(f"Shuffle test         : {shuffle_mean:+.2f}")
     print("========================================\n")

@@ -12,7 +12,7 @@ RISK_DOLLARS = 1000  # risk budget per name
 MAX_LEG_DOLLARS = 10000
 
 # Keep track of last rebalance day and positions
-last_rebalance = -1000000
+last_rebalance = 0
 positions = None
 
 
