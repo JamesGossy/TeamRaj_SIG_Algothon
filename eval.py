@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from main import getMyPosition
 
 # ─── User parameters ────────────────────────────────────────────────
-prices_file      = "2024_prices.txt"
+prices_file      = "2025_prices.txt"
 test_days        = 250       # only score the last 50 days
 comm_rate        = 0.0005
 dollar_pos_limit = 10000.0

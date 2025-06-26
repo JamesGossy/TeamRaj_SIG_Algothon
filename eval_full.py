@@ -13,7 +13,7 @@ PRICE_FILES = [
     "2022_prices2.txt",   # 500 d
     "2023_prices.txt",    # 750 d
     "2024_prices.txt",    # 1250 d
-    #"2025_prices.txt",    # 750 d
+    "2025_prices.txt",    # 750 d
 ]
 
 # ────────── evaluation knobs ──────────
@@ -94,5 +94,3 @@ if __name__ == "__main__":
 
     for fn, nD, eq, ex, nz, mdd, tail, f in rows:
         print(f"{fn:<18}{nD:6d} {fnum(eq)} {fnum(ex)} {fnum(nz)}   {fnum(mdd)}{fnum(tail)}")
-
-    print(f"\n(no shuffle — TRAIN={TRAIN_DAYS}, TEST={TEST_DAYS}, noise={NOISE_PCT:.4f})")
