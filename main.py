@@ -1,106 +1,50 @@
 #!/usr/bin/env python
-
+"""Index momentum strategy with volatility-scaled sizing."""
 import numpy as np
 
-# Strategy settings
-WINDOW_SMA = 13      # how many days to look back for the average
-REBALANCE_DAYS = 5   # how often to rebalance
-NUM_TRADES = 6       # number of long and short trades
-GAP_THRESHOLD = 0.018
-VOLATILITY_WINDOW = 20
-RISK_DOLLARS = 1000  # risk budget per name
-MAX_LEG_DOLLARS = 10000
 
-# Keep track of last rebalance day and positions
-last_rebalance = 0
-positions = None
+LOOKBACK      = 10
+THRESH        = 0.002
+TARGET_DOLLAR = 1500
+VOL_WINDOW    = LOOKBACK  # you could also use a longer vol window
 
 
-def getMyPosition(price_history):
-    global last_rebalance, positions
-    
-    # Convert to numpy array
-    prices = np.array(price_history, dtype=float)
-    # Make sure prices has shape (50, days)
+def getMyPosition(price_history: np.ndarray) -> list[int]:
+    prices = np.asarray(price_history, dtype=float)
     if prices.shape[0] != 50:
         prices = prices.T
+    n_inst, n_days = prices.shape
 
-    num_instruments, num_days = prices.shape
-    today = num_days - 1
 
-    # Initialize positions on first call
-    if positions is None:
-        positions = [0] * num_instruments
+    # need at least LOOKBACK+1 days of data
+    if n_days <= max(LOOKBACK, VOL_WINDOW):
+        return [0] * n_inst
 
-    # Not enough data or not time to rebalance yet
-    if num_days <= max(WINDOW_SMA, VOLATILITY_WINDOW):
-        return positions
-    if today - last_rebalance < REBALANCE_DAYS:
-        return positions
 
-    # Compute simple moving average for each instrument
-    sma = []
-    for i in range(num_instruments):
-        window = prices[i, today - WINDOW_SMA + 1 : today + 1]
-        sma.append(sum(window) / len(window))
+    # 1) compute index momentum
+    index = prices.mean(axis=0)
+    mom = index[-1] / index[-LOOKBACK-1] - 1.0
+    if abs(mom) < THRESH:
+        return [0] * n_inst
 
-    # Compute gap from current price to SMA
-    gaps = []
-    for i in range(num_instruments):
-        gap = prices[i, today] / sma[i] - 1.0
-        gaps.append(gap)
 
-    # Rank instruments by gap
-    sorted_indices = sorted(range(num_instruments), key=lambda i: gaps[i])
+    direction = 1 if mom > 0 else -1
+    price_today = prices[:, -1]
 
-    longs = []
-    for i in sorted_indices[:NUM_TRADES]:
-        if gaps[i] <= -GAP_THRESHOLD:
-            longs.append(i)
 
-    shorts = []
-    for i in sorted_indices[-NUM_TRADES:]:
-        if gaps[i] >= GAP_THRESHOLD:
-            shorts.append(i)
+    # 2) compute each instrument's realized vol over VOL_WINDOW days
+    window = prices[:, -VOL_WINDOW-1 : -1]  # shape (50, VOL_WINDOW)
+    rets   = window[:, 1:] / window[:, :-1] - 1
+    vol     = np.std(rets, axis=1, ddof=0) + 1e-8
 
-    # Prepare new positions
-    new_positions = [0] * num_instruments
 
-    # Only trade if we have both longs and shorts
-    if longs and shorts:
-        # Calculate daily returns over the volatility window
-        returns = []
-        for i in range(num_instruments):
-            ret = []
-            for d in range(today - VOLATILITY_WINDOW + 1, today + 1):
-                ret.append(prices[i, d] / prices[i, d-1] - 1)
-            returns.append(ret)
+    # 3) size = TARGET_DOLLAR / (price * vol)
+    raw_shares = TARGET_DOLLAR / (price_today * vol)
+    shares     = np.floor(raw_shares).astype(int)
+    # enforce at least 1 share for non-zero positions
+    shares[shares < 1] = 1
 
-        # Compute standard deviation for each instrument
-        volatility = []
-        for ret in returns:
-            volatility.append(np.std(ret))
 
-        # Replace any zero volatility with the median of non-zero volatilities
-        non_zero_vol = [v for v in volatility if v > 0]
-        fallback = np.median(non_zero_vol)
-        for i in range(len(volatility)):
-            if volatility[i] == 0:
-                volatility[i] = fallback
-
-        # Determine position sizes
-        for i in longs:
-            size = int(RISK_DOLLARS / (volatility[i] * prices[i, today]))
-            size = max(1, min(size, int(MAX_LEG_DOLLARS / prices[i, today])))
-            new_positions[i] = size
-
-        for i in shorts:
-            size = int(RISK_DOLLARS / (volatility[i] * prices[i, today]))
-            size = max(1, min(size, int(MAX_LEG_DOLLARS / prices[i, today])))
-            new_positions[i] = -size
-
-    # Save the new state
-    positions = new_positions
-    last_rebalance = today
-
-    return new_positions
+    # 4) apply direction
+    positions = (direction * shares).tolist()
+    return positions

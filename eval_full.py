@@ -1,93 +1,98 @@
 #!/usr/bin/env python
+"""
+eval_full.py – Algathon scorer (2022-24, walk-forward + full-history noise)
+Adds Max Draw-down and 5 % left-tail risk columns.
+"""
+from __future__ import annotations
+import importlib, numpy as np, pandas as pd, main
+from main import getMyPosition
 
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
-from main import getMyPosition as getPosition
+# ────────── scenario files ──────────
+PRICE_FILES = [
+    "2022_prices1.txt",   # 500 d
+    "2022_prices2.txt",   # 500 d
+    "2023_prices.txt",    # 750 d
+    "2024_prices.txt",    # 1250 d
+    #"2025_prices.txt",    # 750 d
+]
 
-# ───────── constants ─────────
-PRICE_FILE    = Path("prices.txt")
-COMM_RATE     = 0.0005    # commission rate (5 bps)
-POS_LIMIT_USD = 10000
-TRAIN_DAYS    = 250
-TEST_DAYS     = 50
+# ────────── evaluation knobs ──────────
+TRAIN_DAYS, TEST_DAYS = 250, 50
+NOISE_PCT,  LAMBDA_DECAY = 0.001, 0.10
+COMM_RATE,  POS_LIMIT_USD = 0.0005, 10_000.0
 
-# ───────── data loader ─────────
-def loadPrices(fn):
-    df = pd.read_csv(fn, sep='\s+', header=None)
-    prc = df.values.T  # shape: (nInst, nt)
-    nInst, nt = prc.shape
-    print(f"Loaded {nInst} instruments × {nt} days\n")
-    return prc
+# ────────── helpers ──────────
+def load_prices(path: str) -> np.ndarray:
+    return pd.read_csv(path, sep=r"\s+", header=None).values.T        # (nInst×nDays)
 
-# ───────── P/L calculator ─────────
-def calcPL(prcHist, numTestDays):
-    nInst, nt_local = prcHist.shape
-    cash = 0.0
-    curPos = np.zeros(nInst, dtype=int)
-    totalDVol = 0.0
-    value = 0.0
-    pl_list = []
-    startDay = nt_local - numTestDays + 1
+def calcPL(prcHist: np.ndarray, numTestDays: int,
+           noise_pct: float = 0.0, seed: int | None = None):
+    """Organisers’ logic (+ optional noise).  Returns score tuple + daily PL arr."""
+    rng  = np.random.default_rng(seed) if seed is not None else np.random
+    nInst, nt = prcHist.shape
+    cash = 0.0; cur = np.zeros(nInst); totVol = value = 0.0; daily = []
 
-    for t in range(startDay, nt_local + 1):
-        prices = prcHist[:, t-1]
-        if t <= nt_local - 1:
-            tgt = np.asarray(getPosition(prcHist[:, :t]), int)
-            cap = np.floor(POS_LIMIT_USD / prices).astype(int)
-            tgt = np.clip(tgt, -cap, cap)
-            delta = tgt - curPos
-            dvol = np.abs(delta) * prices
-            totalDVol += dvol.sum()
-            cash -= prices.dot(delta) + dvol.sum() * COMM_RATE
-            curPos = tgt
-        val = cash + curPos.dot(prices)
-        todayPL = val - value
-        value = val
-        if t > startDay:
-            pl_list.append(todayPL)
-    arr = np.array(pl_list)
-    return arr.mean(), arr.std(ddof=0), totalDVol, arr
+    startDay = nt - numTestDays + 1
+    for t in range(startDay, nt + 1):
+        hist, price = prcHist[:, :t], prcHist[:, t-1].copy()
+        if noise_pct: price *= 1 + rng.normal(0, noise_pct, nInst)
 
-# ───────── evaluation functions ─────────
-def walkForward(prc):
-    _, nt = prc.shape
-    scores = []
-    start = 0
-    while start + TRAIN_DAYS + TEST_DAYS <= nt:
-        block = prc[:, : start + TRAIN_DAYS + TEST_DAYS]
-        m, s, _, _ = calcPL(block, TEST_DAYS)
-        scores.append(m - 0.1 * s)
-        start += TEST_DAYS
-    return np.array(scores)
+        if t < nt:                                         # no trade on last day
+            raw = getMyPosition(hist);  lim = np.floor(POS_LIMIT_USD/price).astype(int)
+            newPos = np.clip(raw, -lim, lim)
+            delt = newPos - cur;  traded = np.abs(delt)*price
+            totVol += traded.sum()
+            cash -= price.dot(delt) + COMM_RATE*traded.sum();  cur = newPos
 
-def shuffleTest(prc, repeats=20):
-    rng = np.random.default_rng(42)
-    vals = []
-    for _ in range(repeats):
-        sh = prc.copy()
-        for i in range(sh.shape[0]):
-            sh[i] = np.roll(sh[i], rng.integers(sh.shape[1]))
-        vals.append(walkForward(sh).mean())
-    return float(np.mean(vals))
+        portVal = cur.dot(price)
+        daily.append(cash + portVal - value);  value = cash + portVal
 
-# ───────── main script ─────────
+    pll = np.array(daily[1:])                      # first element is 0
+    mu, sigma = pll.mean(), pll.std(ddof=0)
+    score = mu - 0.1*sigma;  sharpe = np.sqrt(249)*mu/sigma if sigma else 0.0
+    return score, mu, sigma, sharpe, pll          # <--  return daily PL
+
+def walk_forward(prc, train=TRAIN_DAYS, test=TEST_DAYS, λ=LAMBDA_DECAY):
+    folds, start = [], 0; _, nt = prc.shape
+    while start + train + test <= nt:
+        importlib.reload(main)
+        seg = prc[:, :start+train+test]
+        s, *_ = calcPL(seg, test)
+        folds.append(s);  start += test
+    folds = np.asarray(folds);  w = np.exp(λ*np.arange(len(folds)))
+    return folds, folds.mean(), (folds*w).sum()/w.sum()
+
+def max_drawdown(cum: np.ndarray) -> float:
+    peak = np.maximum.accumulate(cum);  draw = cum - peak
+    return draw.min()                   # negative value ⇒ draw-down
+
+def full_risk_stats(prices: np.ndarray):
+    """Run once on full file (no noise) to get MaxDD & Tail-5 %."""
+    _, _, _, _, pl = calcPL(prices, numTestDays=prices.shape[1])
+    cum = pl.cumsum()
+    mdd = max_drawdown(cum)
+    tail = np.percentile(pl, 5)         # 5 % left-tail
+    return mdd, tail
+
+def fnum(x: float, w: int=9) -> str:
+    return f"{x:+{w}.2f}" if np.isfinite(x) else f"{'—':>{w}}"
+
+# ────────── main evaluation ──────────
 if __name__ == "__main__":
-    prcAll = loadPrices(PRICE_FILE)
+    rows = []
+    for fn in PRICE_FILES:
+        P = load_prices(fn);  nDays = P.shape[1]
+        folds, eq, exp = walk_forward(P)
+        noise_score    = calcPL(P, nDays, noise_pct=NOISE_PCT, seed=42)[0]
+        mdd, tail      = full_risk_stats(P)
+        rows.append((fn, nDays, eq, exp, noise_score, mdd, tail, folds))
 
-    # 1) Walk-forward
-    wf_scores = walkForward(prcAll)
-    wts = np.arange(1, len(wf_scores)+1)
-    tw_mean = (wf_scores * wts).sum() / wts.sum()
+    # ─────────── scoreboard ───────────
+    print("\n======== 2022-24  SCENARIO SCORECARD ========\n")
+    hdr = f"{'File':<18}{'Days':>6}{'EQ-Mean':>10}{'EXP-Mean':>10}{'Noise':>10}{'MaxDD':>10}{'Tail-5%':>10}"
+    print(hdr);  print("-"*len(hdr))
 
-    # 2) Shuffle
-    shuffle_mean = shuffleTest(prcAll)
+    for fn, nD, eq, ex, nz, mdd, tail, f in rows:
+        print(f"{fn:<18}{nD:6d} {fnum(eq)} {fnum(ex)} {fnum(nz)}   {fnum(mdd)}{fnum(tail)}")
 
-    # ───────── summary display ─────────
-    print("========== Evaluation Summary ==========")
-    print(f"Walk-forward folds : {wf_scores.round(2)}")
-    print(f"Time-weighted mean : {tw_mean:.2f}\n")
-    print("---- Robustness Test ----")
-    print(f"Shuffle test         : {shuffle_mean:+.2f}")
-    print("========================================\n")
+    print(f"\n(no shuffle — TRAIN={TRAIN_DAYS}, TEST={TEST_DAYS}, noise={NOISE_PCT:.4f})")
