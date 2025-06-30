@@ -64,7 +64,7 @@ fit = model.fit()
 steps = 250
 fc = fit.get_forecast(steps=steps)
 mean_fc = fc.predicted_mean
-ci = fc.conf_int(alpha=0.05)
+ci = fc.conf_int(alpha=0.25)
 lower = ci.iloc[:,0].astype(float).values
 upper = ci.iloc[:,1].astype(float).values
 idx_fc = np.arange(len(daily_mean), len(daily_mean) + steps)
@@ -73,11 +73,32 @@ idx_fc = np.arange(len(daily_mean), len(daily_mean) + steps)
 plt.figure(figsize=(12, 6))
 plt.plot(daily_mean.index, daily_mean, label='Historical', color='black')
 plt.plot(idx_fc, mean_fc, label='Forecast', color='blue', linestyle='--')
-plt.fill_between(idx_fc, lower, upper, color='blue', alpha=0.2, label='95% CI')
+plt.fill_between(idx_fc, lower, upper, color='blue', alpha=0.2, label='75% CI')
 plt.xlabel("Day Index")
 plt.ylabel("Daily Mean Price")
 plt.title("ARIMA(1,1,1) Forecast of 2025 Daily Mean Price")
 plt.legend()
 plt.grid(True, linestyle="--", linewidth=0.5)
+plt.tight_layout()
+plt.show()
+
+
+# ─── Part 3: Plot all 50 instruments’ 2025 prices ───────────────────────────────
+# arr should already be loaded as shape (n_days, 50)
+# If not, re-load/reshape it as before:
+arr = np.loadtxt(datasets["2025"])
+if arr.ndim == 2 and arr.shape[0] == 50:
+    # we want rows=days, cols=instruments
+    arr = arr.T
+
+plt.figure(figsize=(14, 7))
+for inst in range(arr.shape[1]):
+    plt.plot(arr[:, inst], alpha=0.7)
+plt.xlabel("Day Index (2025)")
+plt.ylabel("Price")
+plt.title("Daily Price Series for All 50 Instruments in 2025")
+plt.grid(True, linestyle="--", linewidth=0.5, alpha=0.3)
+# omit the legend so it doesn’t clutter – if you really need labels:
+# plt.legend([f"Inst {i}" for i in range(arr.shape[1])], bbox_to_anchor=(1.05, 1), loc='upper left', ncol=2, fontsize='small')
 plt.tight_layout()
 plt.show()

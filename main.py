@@ -1,50 +1,38 @@
-#!/usr/bin/env python
-"""Index momentum strategy with volatility-scaled sizing."""
+#!/usr/bin/env python3
 import numpy as np
 
-
-LOOKBACK      = 10
-THRESH        = 0.002
-TARGET_DOLLAR = 1500
-VOL_WINDOW    = LOOKBACK  # you could also use a longer vol window
-
+# --- parameters ---
+LOOKBACK      = 10     # days in momentum / vol window
+THRESH        = 0.002  # index-momentum entry filter
+TARGET_DOLLAR = 1_500  # risk capital per leg
+POSITION_CAP  = 10_000 # max $ exposure per stock
 
 def getMyPosition(price_history: np.ndarray) -> list[int]:
-    prices = np.asarray(price_history, dtype=float)
+    # shape safeguard (50 × T)
+    prices = np.asarray(price_history, float)
     if prices.shape[0] != 50:
         prices = prices.T
     n_inst, n_days = prices.shape
 
-
-    # need at least LOOKBACK+1 days of data
-    if n_days <= max(LOOKBACK, VOL_WINDOW):
+    # need enough history
+    if n_days <= LOOKBACK:
         return [0] * n_inst
 
-
-    # 1) compute index momentum
-    index = prices.mean(axis=0)
-    mom = index[-1] / index[-LOOKBACK-1] - 1.0
+    # index momentum signal
+    idx = prices.mean(axis=0)
+    mom = idx[-1] / idx[-LOOKBACK-1] - 1
     if abs(mom) < THRESH:
         return [0] * n_inst
-
-
     direction = 1 if mom > 0 else -1
+
+    # per-stock realised vol
+    rets = prices[:, -LOOKBACK-1:-1][:, 1:] / prices[:, -LOOKBACK-1:-1][:, :-1] - 1
+    vol  = np.std(rets, axis=1) + 1e-8
+
+    # position sizing
     price_today = prices[:, -1]
+    shares = np.floor(TARGET_DOLLAR / (price_today * vol)).astype(int)
+    shares[shares < 1] = 1                                 # min 1 share
+    shares = np.minimum(shares, np.floor(POSITION_CAP / price_today).astype(int))
 
-
-    # 2) compute each instrument's realized vol over VOL_WINDOW days
-    window = prices[:, -VOL_WINDOW-1 : -1]  # shape (50, VOL_WINDOW)
-    rets   = window[:, 1:] / window[:, :-1] - 1
-    vol     = np.std(rets, axis=1, ddof=0) + 1e-8
-
-
-    # 3) size = TARGET_DOLLAR / (price * vol)
-    raw_shares = TARGET_DOLLAR / (price_today * vol)
-    shares     = np.floor(raw_shares).astype(int)
-    # enforce at least 1 share for non-zero positions
-    shares[shares < 1] = 1
-
-
-    # 4) apply direction
-    positions = (direction * shares).tolist()
-    return positions
+    return (direction * shares).tolist()
