@@ -41,6 +41,8 @@ def getMyPosition(price_history: np.ndarray) -> list[int]:
     # 3) size = TARGET_DOLLAR / (price * vol)
     raw_shares = TARGET_DOLLAR / (price_today * vol)
     shares     = np.floor(raw_shares).astype(int)
+    dollar_position = shares * price_today
+    shares[dollar_position > 10000] = np.floor(10000 / price_today[dollar_position > 10000]).astype(int)
     # enforce at least 1 share for non-zero positions
     shares[shares < 1] = 1
 
