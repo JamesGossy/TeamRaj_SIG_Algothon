@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from main import getMyPosition
+from main_2 import getMyPosition
 
 # ─── User parameters ────────────────────────────────────────────────
 prices_file      = "prices.txt"
