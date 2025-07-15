@@ -6,12 +6,12 @@ import numpy as np
 LOOKBACK      = 5
 VOL_WINDOW    = 5
 THRESH        = 0.002
-TARGET_DOLLAR = 500
+TARGET_DOLLAR = 700
 DOLLAR_CAP    = 10_000        # exchange limit
 
 # breadth thresholds
 BREADTH_LONG = 0.51 # % of stocks that must be rising to go long
-BREADTH_SHORT = 0.49 # % of stocks that must be falling to go short
+BREADTH_SHORT = 0.48 # % of stocks that must be falling to go short
 
 def getMyPosition(price_history: np.ndarray) -> list[int]:
     """Return desired integer position for each of the 50 instruments."""
