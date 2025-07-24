@@ -6,7 +6,7 @@ import numpy as np
 LOOKBACK      = 5
 VOL_WINDOW    = 5
 THRESH        = 0.002
-TARGET_DOLLAR = 700
+TARGET_DOLLAR = 500
 DOLLAR_CAP    = 10_000        # exchange limit
 
 # breadth thresholds
@@ -42,16 +42,16 @@ def getMyPosition(price_history: np.ndarray) -> list[int]:
     else:
         return [0] * n_inst  # skip if momentum and breadth disagree
 
-    # ── 2) Realised volatility ───────────────────────────────────────────
+    # ── 3) Realised volatility ───────────────────────────────────────────
     window = prices[:, -VOL_WINDOW - 1 : -1]
     rets   = window[:, 1:] / window[:, :-1] - 1.0
     vol    = np.std(rets, axis=1, ddof=0) + 1e-8       # avoid /0
 
-    # ── 3) Vol-scaled sizing ─────────────────────────────────────────────
+    # ── 4) Vol-scaled sizing ─────────────────────────────────────────────
     shares = np.floor(TARGET_DOLLAR / (p_today * vol)).astype(int)
     shares[shares < 1] = 1                             # min 1 share
 
-    # ── 4) Clip by \$10 k rule ───────────────────────────────────────────
+    # ── 5) Clip by \$10 k rule ───────────────────────────────────────────
     cap = np.floor(DOLLAR_CAP / p_today).astype(int)
     shares = np.clip(shares, 0, cap)
 
