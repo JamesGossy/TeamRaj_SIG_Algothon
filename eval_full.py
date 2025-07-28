@@ -88,7 +88,7 @@ if __name__ == "__main__":
         rows.append((fn, nDays, eq, exp, noise_score, mdd, tail, folds))
 
     # ─────────── scoreboard ───────────
-    print("\n======== 2022-24  SCENARIO SCORECARD ========\n")
+    print("\n======== 2022-25  SCENARIO SCORECARD ========\n")
     hdr = f"{'File':<18}{'Days':>6}{'EQ-Mean':>10}{'EXP-Mean':>10}{'Noise':>10}{'MaxDD':>10}{'Tail-5%':>10}"
     print(hdr);  print("-"*len(hdr))
 
