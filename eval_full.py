@@ -5,7 +5,7 @@ Adds Max Draw-down and 5 % left-tail risk columns.
 """
 from __future__ import annotations
 import importlib, numpy as np, pandas as pd, main
-from main import getMyPosition
+from main_2 import getMyPosition
 
 # ────────── scenario files ──────────
 PRICE_FILES = [
