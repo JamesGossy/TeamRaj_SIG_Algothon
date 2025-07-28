@@ -8,7 +8,7 @@ datasets = {
     "2022": ["2022_prices1.txt", "2022_prices2.txt"],
     "2023": "2023_prices.txt",
     "2024": "2024_prices.txt",
-    "2025": "2025_prices.txt",
+    "2025": "prices.txt",
 }
 
 # ─── Part 1: Scaled Mean Series for 2022–2025 ────────────────────────────────────
