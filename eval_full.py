@@ -13,7 +13,7 @@ PRICE_FILES = [
     "2022_prices2.txt",   # 500 d
     "2023_prices.txt",    # 750 d
     "2024_prices.txt",    # 1250 d
-    "2025_prices.txt",    # 1000 d
+    "2025_prices.txt",    # 1500 d
 ]
 
 # ────────── evaluation knobs ──────────
@@ -33,7 +33,7 @@ def calcPL(prcHist: np.ndarray, numTestDays: int,
     cash = 0.0; cur = np.zeros(nInst); totVol = value = 0.0; daily = []
 
     startDay = nt - numTestDays + 1
-    for t in range(startDay, nt + 1):
+    for t in range(startDay, nt + 1):   
         hist, price = prcHist[:, :t], prcHist[:, t-1].copy()
         if noise_pct: price *= 1 + rng.normal(0, noise_pct, nInst)
 
