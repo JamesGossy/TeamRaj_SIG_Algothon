@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Index momentum strategy with volatility-scaled sizing."""
 import numpy as np
 
