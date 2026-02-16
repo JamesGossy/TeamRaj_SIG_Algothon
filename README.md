@@ -83,43 +83,88 @@ In most cases, ML-based models failed to outperform simpler baselines after cost
 
 ## 1.1 Pairs Trading — Viability Analysis
 
-Pairs trading is a **relative-value** strategy that trades the spread between two related assets rather than predicting outright direction.
+Pairs trading is a **relative-value** strategy. Instead of predicting whether the market will go up or down, it looks for two stocks that move closely together. If their prices temporarily diverge, the strategy bets that they will revert back to their usual relationship.
 
-### What I looked for
-- stable correlation or co-movement
-- spread stationarity
-- robustness of β estimation
-- mean-reversion speed (half-life)
+To assess whether this was viable, I first examined the cross-asset correlation structure.
 
-### What I plotted / computed
-- full correlation matrix across all instruments
-- rolling correlations
-- candidate spreads of the form *(price_A − β·price_B)*
-- z-scores and simple threshold backtests
-- sensitivity to window lengths and β estimation methods
+<p align="center">
+  <img src="plots/correlation_matrix.png" width="500">
+</p>
 
-### Findings
-The correlation matrix revealed uniformly low cross-asset correlations, with the highest pairwise correlation approximately **0.1**.  
-Rolling correlations were unstable, and no candidate spread exhibited consistent mean-reverting behaviour or economically meaningful half-lives.
+<p align="center">
+  <em>Figure 1. Correlation matrix of the 50 stocks. Off-diagonal values are uniformly low, indicating weak cross-asset relationships.</em>
+</p>
+
+### What This Graph Shows
+
+The plot above is a **correlation matrix** of the 50 stocks.
+
+- Each square represents the correlation between a pair of stocks.
+- Red along the diagonal simply shows that each stock is perfectly correlated with itself (correlation = 1).
+- The off-diagonal squares represent how strongly different stocks move together.
+- Darker blue colours indicate low or near-zero correlation.
+
+In this matrix, almost all off-diagonal values are light blue. The strongest pairwise correlation is only around **0.1**, which is very low.
+
+### Why This Matters for Pairs Trading
+
+Pairs trading relies on finding two assets that:
+
+1. Move closely together (high correlation), and  
+2. Have a stable long-term relationship (often tested with cointegration).
+
+If two stocks barely move together in the first place, there is no meaningful spread relationship to exploit. Small, unstable correlations suggest:
+
+- No strong common drivers between assets.
+- No persistent relative pricing relationship.
+- High likelihood that any apparent relationship is just noise.
+
+Without strong and stable co-movement, any spread constructed between two stocks would behave more like random noise than a mean-reverting signal.
 
 ### Conclusion
-Given the lack of stable co-movement, pairs trading was deemed unlikely to produce robust out-of-sample performance.  
-Formal cointegration testing was therefore not pursued, and pairs trading was excluded from the final algorithm.
+
+Because the correlation structure showed **uniformly low cross-asset correlations**, there were no clear candidate pairs worth pursuing.
+
+Given this, I decided not to proceed with deeper analysis such as formal cointegration testing. The data did not provide a strong enough foundation to justify further research into pairs trading, so this approach was excluded from the final algorithm.
+
 
 ---
 
 ## 1.2 Momentum
 
-Momentum assumes that assets with strong recent performance continue to outperform over a given horizon.
+Momentum assumes that assets with strong recent performance continue to outperform over a given horizon (and weak performers continue to lag). In this market, the key question was whether returns showed enough short-term persistence to make momentum signals meaningful, rather than pure noise.
 
-### What I tested
-- simple time-series momentum (sign of rolling returns)
-- moving average crossover rules
-- breakout-style signals
-- momentum performance across volatility and trend regimes
+<p align="center">
+  <img src="plots/cumulative_returns.png" width="520">
+</p>
 
-**Key takeaway:**  
-Momentum effects were present but highly regime-dependent. Performance deteriorated during high-volatility or sideways markets, motivating the use of trend and volatility filters rather than raw momentum signals.
+<p align="center">
+  <em>Figure 2. Cumulative returns of the 50 stocks (grey) with an equal-weight “market” index in red, rebased to 100. Individual names diverge substantially over time, while the index is smoother and often drifts sideways.</em>
+</p>
+
+### Cross-sectional behaviour
+
+Figure 2 shows that while the equal-weight index does not exhibit a strong, sustained trend over the full period, individual stocks spread out widely. This indicates meaningful dispersion in performance across names and suggests the market experiences periods where moves are directional, even if the long-run index level is relatively flat.
+
+To test whether directional moves tend to persist, I examined the autocorrelation of daily market returns.
+
+<p align="center">
+  <img src="plots/market_return_acf.png" width="520">
+</p>
+
+<p align="center">
+  <em>Figure 3. Autocorrelation function (ACF) of daily returns for the equal-weight market index. Lag 1 and lag 2 are strongly positive and exceed the confidence band, indicating short-horizon return persistence.</em>
+</p>
+
+### Evidence for short-horizon momentum
+
+The ACF in Figure 3 shows clear positive autocorrelation at the first few lags, with lag 1 around 0.4 and lag 2 around 0.2 to 0.25. Both exceed the confidence band, supporting the presence of statistically meaningful short-term persistence in market returns.
+
+In practical terms, this implies that recent market direction carries information for the next one to two trading days, which is consistent with short-horizon momentum. The effect appears concentrated in the earliest lags, so momentum signals based on recent history (days to a couple of weeks) are more justified by these diagnostics than long-horizon trend-following.
+
+### Conclusion
+
+Overall, the market structure suggested momentum was viable, but primarily as a short-horizon effect. Individual stocks showed large dispersion over time, and the equal-weight market returns displayed strong positive autocorrelation at early lags. This supported focusing momentum research on short lookback windows that align with where persistence was most visible.
 
 ---
 
