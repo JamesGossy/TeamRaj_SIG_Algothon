@@ -170,16 +170,49 @@ Overall, the market structure suggested momentum was viable, but primarily as a 
 
 ## 1.3 Mean Reversion
 
-Mean reversion assumes prices revert toward an anchor such as a rolling mean or long-term trend.
+Mean reversion assumes that large moves tend to be followed by a pullback toward an anchor (a rolling mean, long-run average, or some notion of “fair value”). In this market, the key viability question was whether returns exhibit **negative** short-horizon dependence (bounce-back), either at the market level or consistently across individual names.
 
-### What I tested
-- z-score reversion around rolling means
-- EMA-based deviation triggers
-- autocorrelation of returns (with random baselines)
-- reversion speed relative to transaction costs
+<p align="center">
+  <img src="plots/11_market_nextday_scatter.png" width="520">
+</p>
 
-**Key takeaway:**  
-Single-asset mean reversion showed more consistent behaviour than cross-asset strategies, particularly when trades were filtered by volatility and trend conditions.
+<p align="center">
+  <em>Figure X. Next-day returns versus same-day returns for the equal-weight market. The fitted slope is positive (about 0.43), indicating continuation rather than reversal at a one-day horizon.</em>
+</p>
+
+### Market-level behaviour: continuation dominates
+
+Figure X directly tests a simple mean-reversion premise: “after an up day, expect a down day” and vice versa. The relationship is clearly **positive**, not negative. This implies that, on average, daily market moves tend to **persist** into the next day rather than snap back. A naive mean reversion rule that fades yesterday’s move would therefore be fighting the dominant short-horizon structure in the data.
+
+<p align="center">
+  <img src="plots/12_market_bounceback_extremes.png" width="520">
+</p>
+
+<p align="center">
+  <em>Figure Y. Average forward cumulative market returns after extreme days defined by a rolling z-score threshold (|z| &gt; 2). Post-extreme performance is directionally consistent with the initial move across multiple horizons.</em>
+</p>
+
+### Extremes do not reliably snap back
+
+A common mean reversion variant is to fade “extreme” days, expecting them to be overreactions. Figure Y tests exactly that by conditioning on large positive and negative shocks. The results show **directional follow-through** rather than clean reversals: after strongly positive days, average forward returns remain positive, and after strongly negative days, forward returns remain negative across 1 to 5 day horizons. This is the opposite of what a robust short-horizon mean reversion edge would require.
+
+<p align="center">
+  <img src="plots/13_ar1_phi_distribution.png" width="520">
+</p>
+
+<p align="center">
+  <em>Figure Z. Distribution of AR(1) coefficients across individual stocks. Most names cluster near zero with a slight positive bias, and only a minority show negative coefficients consistent with short-horizon mean reversion.</em>
+</p>
+
+### Cross-sectional evidence: weak and inconsistent mean reversion
+
+At the single-name level, Figure Z shows that lag-1 dependence is mostly **near zero**, with a mild tilt to **positive** coefficients and only a smaller subset of negative values. That pattern suggests any mean reversion effect is not broad-based across the universe. If mean reversion exists, it is likely limited to a subset of instruments or requires a more specific trigger than “price moved a lot.”
+
+### Conclusion
+
+Across both the market proxy and the cross-section, the diagnostics do not support **simple daily mean reversion** as a primary edge. One-day dynamics show continuation, “extreme” moves tend to follow through, and single-name short-horizon mean reversion appears weak and inconsistent. Any mean reversion approach in this environment would need to be highly selective (instrument-level selection or specialised triggers) rather than applied as a universal fade rule.
+
+
 
 ---
 
