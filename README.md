@@ -8,8 +8,6 @@
 
 ## Team
 
-We competed as **Team RAJ**:
-
 <p align="center">
   <img src="images/james_goss.jpeg" width="520" />
 </p>
