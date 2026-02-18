@@ -692,7 +692,7 @@ This competition was honestly a good reminder that most of the work in trading r
 
 ---
 
-## 3.1 Market Learnings
+## 3.1 Learnings
 
 ### In this dataset, the best signal was the simplest one
 From the market analysis, most of the structure was:
@@ -715,10 +715,6 @@ Many strategies looked decent before costs and then became useless after commiss
 - avoiding rapid flip-flopping in choppy periods,
 - accepting that doing nothing is often the best trade.
 
----
-
-## 3.2 Process Learnings
-
 ### The fastest progress came from deleting ideas early
 At the start we spent time exploring lots of different strategy styles. The turning point was getting ruthless about filtering:
 - if a strategy did not survive costs, it was dead,
@@ -727,18 +723,9 @@ At the start we spent time exploring lots of different strategy styles. The turn
 
 Once we started prioritising robustness over complexity, our iteration speed improved a lot.
 
-### A small number of good plots beats spamming plots
-It is really tempting to produce dozens of charts, but the most useful ones were the ones that directly answered a decision:
-- Is there any cross-asset structure? (correlation matrix)
-- Is momentum real at the market level? (market ACF or rolling ACF)
-- Does mean reversion actually show up? (next-day scatter or bounce-back extremes)
-- Is volatility mainly time-varying or stock-specific? (vol distributions or extremes)
-
-Everything else was mostly noise.
-
 ---
 
-## 3.3 Biggest Mistakes
+## 3.2 Biggest Mistakes
 
 - **Over-testing fragile ideas early.**  
   We spent too long on strategies that were never going to survive the low-correlation structure and commission model.
@@ -751,7 +738,7 @@ Everything else was mostly noise.
 
 ---
 
-## 3.4 What We Would Do Differently Next Time
+## 3.3 What We Would Do Differently Next Time
 
 - **Work backwards from the scoring function earlier.**  
   Since the score penalises volatility, we would treat variance reduction and turnover reduction as first-class goals from the start.
