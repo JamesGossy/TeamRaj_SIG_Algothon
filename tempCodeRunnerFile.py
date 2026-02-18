@@ -1,19 +1,13 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import os
 from main import getMyPosition
 
 # --- Configuration ---
 PRICES_PATH = "price_files/2025_prices.txt"
-SAVE_DIR = "plots"
-STOCK_IDX = 38
+STOCK_IDX = 1
 LOOKBACK_DAYS = 200
 COMM_RATE = 0.0005
-
-# Ensure the plots directory exists
-if not os.path.exists(SAVE_DIR):
-    os.makedirs(SAVE_DIR)
 
 # 1. Load Data
 df = pd.read_csv(PRICES_PATH, sep=r"\s+", header=None)
@@ -37,16 +31,19 @@ commissions = trades * p[1:] * COMM_RATE
 net_pnl = daily_pnl - commissions
 
 # 5. Plotting
+# Updated to 3 subplots and adjusted figsize for the extra graph
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(14, 15), sharex=True)
 
 # Top: Price, Regimes, and Trade Markers
 ax1.plot(p, color='black', alpha=0.2, label='Price')
 
 for i in range(1, len(pos)):
+    # Background Shading
     color = 'green' if pos[i-1] > 0 else 'red' if pos[i-1] < 0 else None
     if color:
         ax1.axvspan(i-1, i, color=color, alpha=0.05)
     
+    # Trade Markers (Arrows and Xs)
     prev, curr = pos[i-1], pos[i]
     if curr > 0 and prev <= 0: # Entry Long
         ax1.scatter(i, p[i], marker='^', color='green', s=100, zorder=5)
@@ -67,20 +64,13 @@ ax2.set_title("Equity Curve")
 ax2.set_ylabel("PnL ($)")
 
 # Bottom: Position Amount
+# Using step plot to accurately represent discrete position changes
 ax3.step(range(len(pos)), pos, where='post', color='blue', lw=1.5)
 ax3.axhline(0, color='black', lw=0.8, ls='--')
 ax3.set_title("Position Amount")
 ax3.set_ylabel("Quantity")
 ax3.set_xlabel("Days")
 ax3.grid(True, alpha=0.3)
-
-plt.tight_layout()
-
-# --- Save Logic ---
-filename = f"stock_{STOCK_IDX}_trade_trace.png"
-save_path = os.path.join(SAVE_DIR, filename)
-plt.savefig(save_path, dpi=300, bbox_inches='tight')
-print(f"Plot saved to: {save_path}")
 
 plt.show()
 
