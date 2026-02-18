@@ -38,7 +38,7 @@ market_rolling_vol = market_returns.rolling(ROLL_WINDOW).std() * np.sqrt(252)
 # Helpers
 # ───────────────────────────────────────────────────────────────────────
 def mean_rolling_autocorr(series: pd.Series, max_window: int = 100, lag: int = 1) -> pd.Series:
-    """For a range of window sizes, compute the mean lag-1 autocorr over the series."""
+    """For a range of window sizes, compute the mean lag-k autocorr over the series."""
     s = series.dropna().astype(float)
     x = s
     y = s.shift(lag)
@@ -82,6 +82,12 @@ def fit_ar1(series: pd.Series):
         return phi, alpha
     except Exception:
         return np.nan, np.nan
+
+def per_stock_autocorr(df_returns: pd.DataFrame, lag: int) -> pd.Series:
+    """Per-stock autocorrelation of returns at a given lag."""
+    acf = df_returns.apply(lambda s: s.dropna().autocorr(lag=lag))
+    acf = acf.replace([np.inf, -np.inf], np.nan).dropna()
+    return acf
 
 # ───────────────────────────────────────────────────────────────────────
 # 3) Generate Graphs
@@ -221,7 +227,7 @@ ax.legend()
 plt.tight_layout()
 figures["15_market_rolling_vol_regimes"] = fig
 
-# 12) Rolling Autocorrelation for separate lags (1, 2, 5, 10)
+# 12) Rolling Autocorrelation for separate lags (1, 2, 5, 10) — MARKET
 acf_window = 100
 lags = [1, 2, 5, 10]
 acf_sig = 2.0 / np.sqrt(acf_window)  # rough significance band
@@ -234,19 +240,8 @@ for lag in lags:
     ax.plot(x_days, roll_acf_k.values, label=f"Lag {lag}")
     ax.axhline(0.0, color="black", linewidth=1)
 
-    # Red = momentum threshold (positive), Green = mean-reversion threshold (negative)
-    ax.axhline(
-        acf_sig,
-        linestyle="--",
-        color="red",
-        label="Momentum threshold"
-    )
-    ax.axhline(
-        -acf_sig,
-        linestyle="--",
-        color="green",
-        label="Mean-reversion threshold"
-    )
+    ax.axhline(acf_sig, linestyle="--", color="red", label="Momentum threshold")
+    ax.axhline(-acf_sig, linestyle="--", color="green", label="Mean-reversion threshold")
 
     ax.set_title(f"Rolling Autocorrelation of Market Returns (lag={lag}, window={acf_window})")
     ax.set_xlabel("Day")
@@ -268,6 +263,115 @@ ax.set_xlabel("AR(1) phi")
 ax.set_ylabel("Frequency")
 plt.tight_layout()
 figures["13_ar1_phi_distribution"] = fig
+
+# ───────────────────────────────────────────────────────────────────────
+# ADDITIONAL PLOTS (KEEPING 19 + REWORKING 20, REMOVING 17 + 18)
+# ───────────────────────────────────────────────────────────────────────
+
+# C) Rolling 100D volatility over time for top-2 most volatile and top-2 least volatile
+#    (based on avg 100D rolling vol)
+vol_by_stock = rolling_vol.mean(axis=0).replace([np.inf, -np.inf], np.nan).dropna()
+most_vol_stocks = vol_by_stock.nlargest(2).index.tolist()
+least_vol_stocks = vol_by_stock.nsmallest(2).index.tolist()
+
+sel_vol = most_vol_stocks + least_vol_stocks
+if len(sel_vol) > 0:
+    fig, ax = plt.subplots(figsize=(12, 6))
+    x_days = np.arange(len(rolling_vol))
+    for col in sel_vol:
+        ax.plot(x_days, rolling_vol[col].values, label=col)
+    ax.set_title("Rolling 100D Volatility Over Time — Top 2 Most vs Top 2 Least Volatile Stocks")
+    ax.set_xlabel("Day")
+    ax.set_ylabel("Annualised volatility (100D rolling)")
+    ax.legend()
+    plt.tight_layout()
+    figures["19_rolling_volatility_extremes_timeseries"] = fig
+
+# D) Rolling 100D ACF over time for lag 1,2,5,10
+#    Split into TWO plots per lag: (Top-2 Highest ACF) and (Bottom-2 Lowest ACF)
+for lag in [1, 2, 5, 10]:
+    acf = per_stock_autocorr(log_returns, lag=lag)
+    if acf.empty:
+        continue
+
+    top2_names = acf.nlargest(2).index.tolist()
+    bot2_names = acf.nsmallest(2).index.tolist()
+
+    # --- Top 2 plot
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for col in top2_names:
+        roll_acf = rolling_autocorr_ts(log_returns[col], window=acf_window, lag=lag)
+        ax.plot(np.arange(len(roll_acf)), roll_acf.values, label=col)
+    ax.axhline(0.0, color="black", linewidth=1)
+    ax.axhline(acf_sig, linestyle="--", color="red", label="Momentum threshold")
+    ax.axhline(-acf_sig, linestyle="--", color="green", label="Mean-reversion threshold")
+    ax.set_title(f"Rolling {acf_window}D Autocorrelation — Lag {lag}\nTop 2 Highest ACF Stocks")
+    ax.set_xlabel("Day")
+    ax.set_ylabel("Rolling autocorrelation (log returns)")
+    ax.legend()
+    plt.tight_layout()
+    figures[f"20A_stock_rolling_acf_lag{lag}_top2"] = fig
+
+    # --- Bottom 2 plot
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for col in bot2_names:
+        roll_acf = rolling_autocorr_ts(log_returns[col], window=acf_window, lag=lag)
+        ax.plot(np.arange(len(roll_acf)), roll_acf.values, label=col)
+    ax.axhline(0.0, color="black", linewidth=1)
+    ax.axhline(acf_sig, linestyle="--", color="red", label="Momentum threshold")
+    ax.axhline(-acf_sig, linestyle="--", color="green", label="Mean-reversion threshold")
+    ax.set_title(f"Rolling {acf_window}D Autocorrelation — Lag {lag}\nBottom 2 Lowest ACF Stocks")
+    ax.set_xlabel("Day")
+    ax.set_ylabel("Rolling autocorrelation (log returns)")
+    ax.legend()
+    plt.tight_layout()
+    figures[f"20B_stock_rolling_acf_lag{lag}_bottom2"] = fig
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Lead-Lag Hypothesis Testing
+# ───────────────────────────────────────────────────────────────────────
+max_lag = 5
+lead_lag_results = []
+
+# Calculate correlation between Market(t) and Stock_i(t + lag)
+for col in log_returns.columns:
+    stock_series = log_returns[col]
+    for lag in range(-max_lag, max_lag + 1):
+        # positive lag means market leads stock
+        corr = market_returns.corr(stock_series.shift(-lag))
+        lead_lag_results.append({'Stock': col, 'Lag': lag, 'Correlation': corr})
+
+lead_lag_df = pd.DataFrame(lead_lag_results)
+
+# Pivot for heatmap: Rows = Lags, Columns = Stocks
+lead_lag_pivot = lead_lag_df.pivot(index='Lag', columns='Stock', values='Correlation')
+
+fig, ax = plt.subplots(figsize=(14, 6))
+im = ax.imshow(lead_lag_pivot, cmap="RdYlGn", aspect='auto', origin='lower',
+               extent=[0, len(df.columns), -max_lag, max_lag])
+
+fig.colorbar(im, label="Correlation with Market")
+ax.set_yticks(range(-max_lag, max_lag + 1))
+ax.axhline(0, color='black', linewidth=2, linestyle='-') # Contemporaneous line
+ax.set_title("Lead-Lag Heatmap: Market(t) vs Stock(t + Lag)\nPositive Lag = Market Leads Stock")
+ax.set_ylabel("Lag (Days)")
+ax.set_xlabel("Stock Index")
+
+# Add a summary line plot of the average cross-correlation across all stocks
+fig2, ax2 = plt.subplots(figsize=(10, 6))
+avg_lead_lag = lead_lag_pivot.mean(axis=1)
+ax2.plot(avg_lead_lag.index, avg_lead_lag.values, marker='o', linewidth=2)
+ax2.axhline(0, color='black', alpha=0.3)
+ax2.axvline(0, color='red', linestyle='--', label='Contemporaneous')
+ax2.set_title("Average Cross-Correlation: Market vs. Universe")
+ax2.set_xlabel("Lag (Days: Positive = Market Leads)")
+ax2.set_ylabel("Average Correlation")
+ax2.legend()
+ax2.grid(True, alpha=0.3)
+
+figures["21_lead_lag_heatmap"] = fig
+figures["22_avg_lead_lag_profile"] = fig2
 
 # ───────────────────────────────────────────────────────────────────────
 # Save All Plots
