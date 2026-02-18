@@ -83,7 +83,7 @@ if __name__ == "__main__":
     import os
 
     # Ensure the plot directory exists
-    plot_dir = "plot"
+    plot_dir = "plots"
     if not os.path.exists(plot_dir):
         os.makedirs(plot_dir)
 
