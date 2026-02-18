@@ -487,7 +487,7 @@ I think our final placement is a mix of:
 - solid risk/cost handling (threshold + vol scaling),
 - and some unavoidable variance (because the leaderboard is tight at the top).
 
-If We had another iteration, the first place we’d look to improve would be **reducing whipsaw damage** (e.g., smoother entry/exit logic or regime persistence) without increasing trading frequency.
+If we had another iteration, the first place we’d look to improve would be **reducing whipsaw damage** (e.g., smoother entry/exit logic or regime persistence) without increasing trading frequency.
 
 ---
 
@@ -497,30 +497,7 @@ This competition was honestly a good reminder that most of the work in trading r
 
 ---
 
-## 3.1 Technical Learnings
-
-### Backtesting is easy to get wrong
-Even with daily data, it’s very easy to accidentally introduce bugs that make results look way better than they should. The biggest things I had to stay on top of were:
-
-- **No lookahead**: the bot must only see prices up to day *t* when deciding positions for day *t*.
-- **Trading is on position changes**: costs come from **delta positions**, not from holding.
-- **Position clipping matters**: the ±$10k cap interacts with price, so the share limit changes every day.
-
-A strategy can look “stable” just because the evaluator silently clipped it into something else, or because the backtest is accidentally using tomorrow’s info. I found it was worth keeping the evaluator extremely simple and transparent.
-
-### Turnover is the silent killer
-Many strategies looked decent before costs and then became useless after commission. The best improvements I made weren’t about finding new signals, they were about reducing pointless trades:
-
-- adding a **threshold** so the bot stays flat when the market move is tiny
-- avoiding rapid flip-flopping in choppy periods
-- accepting that “doing nothing” is often the best trade
-
-### Risk is mostly a sizing problem
-The volatility differences between stocks were huge and persistent. Without volatility scaling, a few high-vol names dominate the whole P&L (and dominate your drawdowns too). Vol scaling wasn’t just a “nice to have”, it was the difference between a strategy behaving sensibly vs being driven by a handful of instruments.
-
----
-
-## 3.2 Quant / Market Learnings
+## 3.1 Market Learnings
 
 ### In this dataset, the best signal was the simplest one
 From the market analysis, most of the structure was:
@@ -529,31 +506,37 @@ From the market analysis, most of the structure was:
 - weak and unstable single-stock momentum
 - strong **market-level** short-horizon momentum (especially 1–2 day effects)
 
-Once I accepted that, it made the “right” strategy direction way clearer: stop trying to be clever at the stock level and just trade the market regime carefully.
 
-### Mean reversion wasn’t a free lunch
-I expected at least some clean bounce-back after extreme moves, but the market more often showed **follow-through** rather than snapping back. That doesn’t mean mean reversion never works, it just wasn’t dominant at the daily horizon in this universe.
+### Mean reversion wasn’t an easy profit
+We expected at least some clean bounce-back after extreme moves, but the market more often showed **follow-through** rather than snapping back. That doesn’t mean mean reversion never works, it just wasn’t dominant at the daily horizon in this universe.
 
 ### Regimes matter more than indicators
-The strategy didn’t fail because momentum “stopped existing”. It mostly failed in specific periods where the market got choppy and direction flipped often. So a lot of the edge comes from:
+The strategy didn’t sometimes fail because momentum “stopped existing”. It mostly failed in specific periods where the market got choppy and direction flipped often. So a lot of the edge comes from:
 
 - recognising when conditions are good for the signal
 - trading less when the regime is unclear
 
+### Turnover kills strategies
+Many strategies looked decent before costs and then became useless after commission. The best improvements I made weren’t about finding new signals, they were about reducing pointless trades:
+
+- adding a **threshold** so the bot stays flat when the market move is tiny
+- avoiding rapid flip-flopping in choppy periods
+- accepting that “doing nothing” is often the best trade
+
 ---
 
-## 3.3 Process Learnings
+## 3.2 Process Learnings
 
 ### The fastest progress came from deleting ideas early
-At the start I spent time exploring lots of different strategy styles. The turning point was getting ruthless about filtering:
+At the start we spent time exploring lots of different strategy styles. The turning point was getting ruthless about filtering:
 
 - if a strategy didn’t survive costs, it was dead
 - if it only worked in one small slice of time, it was suspicious
 - if it needed heavy tuning, it was probably overfit
 
-Once I started prioritising robustness over complexity, my iteration speed improved a lot.
+Once we started prioritising robustness over complexity, our iteration speed improved a lot.
 
-### A small number of good plots beats “plot spam”
+### A small number of good plots beats spamming plots.
 It’s really tempting to produce dozens of charts, but the most useful ones were the ones that directly answered a decision:
 
 - “Is there any cross-asset structure?” (correlation matrix)
@@ -565,26 +548,26 @@ Everything else was mostly noise.
 
 ---
 
-## 3.4 Biggest Mistakes
+## 3.3 Biggest Mistakes
 
 - **Over-testing fragile ideas early.**  
-  I spent too long on strategies that were never going to survive the low-correlation structure and commission model.
+  We spent too long on strategies that were never going to survive the low-correlation structure and commission model.
 
-- **Not focusing on churn control from day one.**  
-  I initially treated costs as something to “add later”. In reality, costs decide what’s even feasible.
+- **Not focusing on trading cost control from day one.**  
+  We initially treated costs as something to “add later”. In reality, costs decide what’s even feasible.
 
 - **Trying to extract per-stock alpha in a market that didn’t support it.**  
   The data strongly suggested market-level structure was the main thing. I should’ve committed to that direction earlier.
 
 ---
 
-## 3.5 What I’d Do Differently Next Time
+## 3.4 What We’d Do Differently Next Time
 
 - **Work backwards from the scoring function earlier.**  
   Since the score penalises volatility, I’d treat variance reduction and turnover reduction as first-class goals from the start.
 
-- **Spend more time on “whipsaw damage control.”**  
-  My strategy works well in clean regimes. The main weakness is chop. Next iteration I’d focus on better entry/exit smoothing (without increasing trading frequency).
+- **Spend more time on “damage control.”**  
+  Our strategy works well in clean regimes. The main weakness is chop. Next iteration We’d focus on better entry/exit smoothing (without increasing trading frequency).
 
 - **Build a clearer “regime dashboard.”**  
   A few simple signals (volatility state, momentum strength, trend consistency) could make it easier to scale risk down when conditions are bad.
