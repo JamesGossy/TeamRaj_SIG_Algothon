@@ -1,63 +1,78 @@
 # Team RAJ 🚀  
 **SIG Algothon 2025 — Strategy, Research, and Insights**
 
-> This repository contains my research notes, analysis plots, and algorithm submission(s) for the SIG Algothon.  
-> It is written both as a post-mortem and as a reference for anyone learning systematic trading or competition-style quantitative research.
+> This repository contains our research notes, analysis plots, and algorithm submission(s) for the SIG Algothon.  
+> It’s written as a post-mortem and as a reference for anyone learning systematic trading or competition-style quant research.
+
+---
+
+## Team
+
+We competed as **Team RAJ**:
+
+<p align="center">
+  <img src="images/james_goss.jpg" width="220" />
+  <img src="images/achal_singh.jpg" width="220" />
+  <img src="images/lisa_gorman.jpg" width="220" />
+</p>
+
+<p align="center">
+  <em> James Goss            Achal Singh            Lisa Gorman </em>
+</p>
 
 ---
 
 ## Introduction
 
-Hi — I’m James, an engineering student at Monash University with a strong interest in quantitative finance.
+Hi, we’re Team RAJ. We’re engineering students at Monash, and we’re interested in systematic trading and quant research.
 
-This report documents:
-- how I explored the market data,
-- the hypotheses I tested,
-- which strategies were viable (and which were not),
-- what was implemented in the final algorithm,
-- what worked / didn’t work,
-- and what I learned from the process.
+This repo is our write-up from **SIG Algothon 2025**. It includes:
+- the key plots we used to understand the dataset,
+- the strategy ideas we tested (and what we killed early),
+- what we actually submitted,
+- and what we learned from the process.
 
-The emphasis throughout is on **robustness**, **risk awareness**, and **avoiding overfitting**, rather than maximizing in-sample performance.
-
----
-
-## About the SIG Algothon
-
-**SIG Algothon** is an algorithmic trading competition where participants build bots to trade instruments in a simulated market environment under realistic constraints.
+We tried to keep the focus on things that should hold up outside of one lucky backtest:
+- being honest about what the data supports,
+- keeping costs and constraints front-of-mind,
+- and avoiding overfitting.
 
 ---
 
-## Environment Assumptions
+## Introduction to the Algothon
+
+Here’s the setup the competition uses, in plain terms:
 
 - **Instruments:**  
-  50 synthetic instruments in a simulated trading universe, indexed from 0 to 49.
+  50 synthetic stocks (labelled 0 to 49).
 
-- **Time period & frequency:**  
-  Daily price data spanning several years (~1500 observations).  
-  On each trading day *t*, the algorithm receives the full price history from day 0 to *t*.  
-  Final evaluation is performed on unseen future data from the same universe.
+- **Data:**  
+  Daily prices across several years (around ~1500 trading days).
 
-- **Execution model:**  
-  Market-style execution at the most recent available price.  
-  Trades are executed based on the **difference** between the previous day’s position and the newly requested position.
+- **What the bot sees:**  
+  On day *t*, the bot is given the full price history from day 0 up to day *t*.  
+  It does **not** get future prices.
+
+- **How trading works:**  
+  Each day the bot outputs a target position for every stock (number of shares).  
+  The simulator trades from yesterday’s position to the new one.  
+  Orders fill at the most recent price available (think “market order at close”).
 
 - **Costs:**  
-  Fixed commission of **5 basis points (0.0005)** applied to total dollar volume traded.  
-  No explicit bid–ask spread or slippage is modelled beyond this.
+  A fixed commission of **5 bps (0.0005)** on **dollar volume traded**.  
+  So if we trade a lot, we pay a lot. There’s no other slippage model.
 
-- **Constraints:**  
-  - Long and short positions are allowed  
-  - Maximum position size of **±$10,000 per instrument** at trade time  
-  - Temporary breaches due to price movements are allowed but must be corrected the following day  
-  - Positions are integer numbers of shares  
-  - Positions are automatically clipped by the evaluation engine if limits are exceeded
+- **Position limits:**  
+  We can be long or short, but each stock is capped at **±$10,000 notional** at the time we trade.  
+  (The share limit changes with price.)  
+  Positions must be **integer shares**.  
+  If we request too much, the evaluator clips it back into bounds.
 
-- **Objective metric:**  
+- **Scoring:**  
+  We’re scored on daily P&L over an unseen test period.  
+  Higher average P&L helps, but volatility hurts, the score rewards strategies that make money **smoothly**, not just occasionally.
 
   **Score = mean(P&L) − 0.1 × std(P&L)**  
-
-  where P&L is computed over the evaluation period on unseen data.
 
 ---
 
@@ -65,227 +80,176 @@ The emphasis throughout is on **robustness**, **risk awareness**, and **avoiding
 
 ## 1.0 Strategy Feasibility Screening
 
-Before developing specific trading strategies, I first assessed which approaches were compatible with the data resolution, execution model, and constraints of the competition. Several common strategy classes were evaluated and explicitly excluded or de-emphasized.
+Before building strategies, we first checked what was even realistic with daily prices + commission + position caps. A lot of “standard” ideas don’t survive this setup.
 
 ### Excluded: Market Making
-Market making relies on intraday price dynamics, bid–ask spreads, and order book information.  
-Given that the dataset consists solely of daily close prices with no microstructure data, market making strategies were deemed infeasible and excluded.
+Market making needs intraday moves, spreads, and order book info.  
+We only had daily close prices, so market making wasn’t feasible.
 
 ### Excluded: Pure Arbitrage
-Classic arbitrage strategies require deterministic pricing relationships, cross-venue discrepancies, or known conversion mechanics.  
-Due to the absence of intraday prices, cross-product constraints, or explicit pricing rules in the simulation, no persistent arbitrage opportunities were identified.
+Classic arbitrage needs a clear pricing rule, conversions, or cross-venue differences.  
+None of that existed in this simulation, and we didn’t find anything close to risk-free.
 
 ### De-emphasized: Machine Learning
-Machine learning models were explored, but the relatively small sample size (~1500 daily observations) and low signal-to-noise ratio made reliable generalization difficult.  
-In most cases, ML-based models failed to outperform simpler baselines after costs and constraints, and were therefore not used in the final strategy.
+We explored ML, but the dataset is small (~1500 days) and noisy.  
+Most ML approaches didn’t beat simple baselines after costs, so we didn’t use them in the final strategy.
 
 ---
 
-## 1.1 Pairs Trading — Viability Analysis
+## 1.1 Pairs Trading - Viability Analysis
 
-Pairs trading is a **relative-value** strategy. Instead of predicting whether the market will go up or down, it looks for two stocks that move closely together. If their prices temporarily diverge, the strategy bets that they will revert back to their usual relationship.
+Pairs trading is a **relative-value** strategy. Instead of predicting whether the market will go up or down, it looks for two stocks that move closely together. If their prices split apart, the strategy bets they come back together.
 
-To assess whether this was viable, I first examined the cross-asset correlation structure.
+To see if that was even possible, we started by checking cross-asset correlation.
 
 <p align="center">
   <img src="plots/01_correlation_matrix.png" width="500">
 </p>
 
 <p align="center">
-  <em>Figure 1. Correlation matrix of the 50 stocks. Off-diagonal values are uniformly low, indicating weak cross-asset relationships.</em>
+  <em>Figure 1. Correlation matrix of the 50 stocks. Off-diagonal values are uniformly low, meaning weak cross-asset relationships.</em>
 </p>
 
-### What This Graph Shows
+### What this graph shows
 
-The plot above is a **correlation matrix** of the 50 stocks.
+- Each square is the correlation between two stocks.
+- The diagonal is red because each stock is perfectly correlated with itself.
+- Everything off-diagonal is mostly near zero.
 
-- Each square represents the correlation between a pair of stocks.
-- Red along the diagonal simply shows that each stock is perfectly correlated with itself (correlation = 1).
-- The off-diagonal squares represent how strongly different stocks move together.
-- Darker blue colours indicate low or near-zero correlation.
+The strongest correlation we saw was only around **0.1**, which is very low.
 
-In this matrix, almost all off-diagonal values are light blue. The strongest pairwise correlation is only around **0.1**, which is very low.
+### Why this matters
 
-### Why This Matters for Pairs Trading
-
-Pairs trading relies on finding two assets that:
-
-1. Move closely together (high correlation), and  
-2. Have a stable long-term relationship (often tested with cointegration).
-
-If two stocks barely move together in the first place, there is no meaningful spread relationship to exploit. Small, unstable correlations suggest:
-
-- No strong common drivers between assets.
-- No persistent relative pricing relationship.
-- High likelihood that any apparent relationship is just noise.
-
-Without strong and stable co-movement, any spread constructed between two stocks would behave more like random noise than a mean-reverting signal.
+Pairs trading needs strong and stable co-movement. If stocks don’t move together, there’s no reliable “spread” to trade, it just looks like noise.
 
 ### Conclusion
 
-Because the correlation structure showed **uniformly low cross-asset correlations**, there were no clear candidate pairs worth pursuing.
-
-Given this, I decided not to proceed with deeper analysis such as formal cointegration testing. The data did not provide a strong enough foundation to justify further research into pairs trading, so this approach was excluded from the final algorithm.
+Because cross-asset correlations were uniformly weak, we didn’t pursue pairs trading further (no cointegration testing, no spread models). It didn’t look like the dataset supported it.
 
 ---
 
 ## 1.2 Momentum
 
-Momentum assumes that assets with strong recent performance continue to outperform over a given horizon (and weak performers continue to lag). In this market, the key question was whether returns showed enough short-term persistence to make momentum signals meaningful, rather than pure noise.
+Momentum means: if something has been going up recently, it keeps going up (for a bit), and vice versa.
+
+We first looked at cumulative returns to see whether the universe had meaningful trends.
 
 <p align="center">
   <img src="plots/04_cumulative_returns.png" width="520">
 </p>
 
 <p align="center">
-  <em>Figure 2. Cumulative returns of the 50 stocks (grey) with an equal-weight “market” index in red, rebased to 100. Individual names diverge substantially over time, while the index is smoother and often drifts sideways.</em>
+  <em>Figure 2. Cumulative returns of the 50 stocks (grey) with an equal-weight “market” index in red (rebased to 100).</em>
 </p>
 
-### Cross-sectional behaviour
+This plot shows big dispersion across stocks, while the index is smoother and often drifts sideways. That suggested any clean “stock picking” momentum might be hard, but market-level behaviour could still exist.
 
-Figure 2 shows that while the equal-weight index does not exhibit a strong, sustained trend over the full period, individual stocks spread out widely. This indicates meaningful dispersion in performance across names and suggests the market experiences periods where moves are directional, even if the long-run index level is relatively flat.
-
-To test whether directional moves tend to persist, I examined the autocorrelation of daily market returns.
+To test market-level momentum directly, we looked at autocorrelation of daily market returns.
 
 <p align="center">
   <img src="plots/05_market_acf.png" width="520">
 </p>
 
 <p align="center">
-  <em>Figure 3. Autocorrelation function (ACF) of daily returns for the equal-weight market index. Lag 1 is strongly positive (around ~0.4) and exceeds the confidence band, indicating short-horizon return persistence.</em>
+  <em>Figure 3. Autocorrelation of daily returns for the equal-weight market index. Lag 1 is strongly positive (~0.4).</em>
 </p>
 
 ### Market-level momentum looks real
-
-The market index shows clear positive autocorrelation at short lags (strongest at lag 1, still positive at lag 2). In practical terms, this implies that recent market direction carries information for the next one to two trading days, which is consistent with **short-horizon momentum**.
+Lag-1 is strongly positive, and lag-2 is still positive. In normal language: yesterday’s direction often carries into today (especially over 1–2 days).
 
 ### But per-stock momentum is weak / inconsistent
-
-Even when we explicitly look for the **stocks with the strongest rolling autocorrelation**, the effect is much smaller and far less stable than the market index.
+Even the “best” single names weren’t close to the market’s persistence.
 
 <p align="center">
   <img src="plots/20A_stock_rolling_acf_lag1_top2.png" width="720">
 </p>
 
 <p align="center">
-  <em>Figure 3A. Rolling 100-day lag-1 autocorrelation for the top 2 highest-ACF stocks. These are the “best case” names for single-stock momentum.</em>
+  <em>Figure 4. Rolling 100-day lag-1 autocorrelation for the top 2 highest-ACF stocks.</em>
 </p>
-
-- The top two stocks’ rolling lag-1 ACF spends a lot of time near **0 to 0.15**, occasionally spiking above **0.2**, and sometimes turning negative.
-- Compared with the market’s lag-1 ACF (≈ **0.4**), even the *best* single-name momentum is substantially weaker.
-
-For contrast, the bottom-ACF stocks show that negative autocorrelation exists, but it also isn’t clean or persistent:
 
 <p align="center">
   <img src="plots/20B_stock_rolling_acf_lag1_bottom2.png" width="720">
 </p>
 
 <p align="center">
-  <em>Figure 3B. Rolling 100-day lag-1 autocorrelation for the bottom 2 lowest-ACF stocks. These names skew negative on average, but still exhibit unstable swings and occasional spikes.</em>
+  <em>Figure 5. Rolling 100-day lag-1 autocorrelation for the bottom 2 lowest-ACF stocks.</em>
 </p>
 
 ### Conclusion
-
-- **Momentum exists primarily at a market-wide level.** The index shows strong short-lag persistence (lag-1 ACF ~0.4).
-- **Momentum is not reliably tradable per-stock.** Even the top-ACF stocks have much weaker and less stable autocorrelation than the market proxy.
-- Practically, this pushed momentum usage toward **market regime / exposure filters**, rather than a “rank stocks by momentum and buy winners” approach.
+- Momentum exists mainly at a **market-wide** level.
+- Single-stock momentum is weaker and unstable.
+- That pushed us toward a market regime / exposure approach, not “rank stocks and buy winners.”
 
 ---
 
 ## 1.3 Mean Reversion
 
-Mean reversion assumes that large moves tend to be followed by a pullback toward an anchor (a rolling mean, long-run average, or some notion of “fair value”). In this market, the key viability question was whether returns exhibit **negative** short-horizon dependence (bounce-back), either at the market level or consistently across individual names.
+Mean reversion means: after a big move, price tends to snap back.
+
+A simple test is: do up days tend to be followed by down days (and vice versa)?
 
 <p align="center">
   <img src="plots/11_market_nextday_scatter.png" width="520">
 </p>
 
 <p align="center">
-  <em>Figure X. Next-day returns versus same-day returns for the equal-weight market. The fitted slope is positive (about 0.43), indicating continuation rather than reversal at a one-day horizon.</em>
+  <em>Figure 6. Next-day returns vs same-day returns for the equal-weight market. The relationship is positive (continuation), not negative (reversal).</em>
 </p>
 
-### Market-level behaviour: continuation dominates
+This was the opposite of what we want for daily mean reversion: the market tended to **continue**, not bounce back.
 
-Figure X directly tests a simple mean-reversion premise: “after an up day, expect a down day” and vice versa. The relationship is clearly **positive**, not negative. This implies that, on average, daily market moves tend to **persist** into the next day rather than snap back. A naive mean reversion rule that fades yesterday’s move would therefore be fighting the dominant short-horizon structure in the data.
+We also tested “extreme day” bounce-backs.
 
 <p align="center">
   <img src="plots/12_market_bounceback_extremes.png" width="520">
 </p>
 
 <p align="center">
-  <em>Figure Y. Average forward cumulative market returns after extreme days defined by a rolling z-score threshold (|z| &gt; 2). Post-extreme performance is directionally consistent with the initial move across multiple horizons.</em>
+  <em>Figure 7. Average forward returns after extreme days (|z| &gt; 2). Extreme moves tended to follow through more than they snapped back.</em>
 </p>
 
-### Extremes do not reliably snap back
-
-A common mean reversion variant is to fade “extreme” days, expecting them to be overreactions. Figure Y tests exactly that by conditioning on large positive and negative shocks. The results show **directional follow-through** rather than clean reversals: after strongly positive days, average forward returns remain positive, and after strongly negative days, forward returns remain negative across 1 to 5 day horizons. This is the opposite of what a robust short-horizon mean reversion edge would require.
+And finally we checked per-stock short-horizon behaviour.
 
 <p align="center">
   <img src="plots/13_ar1_phi_distribution.png" width="520">
 </p>
 
 <p align="center">
-  <em>Figure Z. Distribution of AR(1) coefficients across individual stocks. Most names cluster near zero with a slight positive bias, and only a minority show negative coefficients consistent with short-horizon mean reversion.</em>
+  <em>Figure 8. Distribution of AR(1) coefficients across stocks. Most are near zero with a slight positive bias.</em>
 </p>
 
-### Cross-sectional evidence: weak and inconsistent mean reversion
-
-Figure Z shows how much each stock’s return today depends on its return yesterday.
-
-- If the AR(1) coefficient (φ) is **positive**, the stock tends to continue in the same direction (momentum).
-- If φ is **negative**, the stock tends to reverse direction (mean reversion).
-- If φ is **close to zero**, yesterday’s move has little to no predictive power.
-
-In the graph, most stocks cluster near zero with a slight positive tilt. This means:
-
-- There is no strong universal mean-reversion effect.
-- A small amount of short-term continuation is present in some names.
-- Any mean-reversion strategy would need to be selective rather than applied broadly.
-
 ### Conclusion
-
-Across both the market proxy and the cross-section, the diagnostics do not support **simple daily mean reversion** as a primary edge. One-day dynamics show continuation, “extreme” moves tend to follow through, and single-name short-horizon mean reversion appears weak and inconsistent. Any mean reversion approach in this environment would need to be highly selective (instrument-level selection or specialised triggers) rather than applied as a universal fade rule.
+Simple daily mean reversion didn’t look like a strong edge here. If mean reversion exists, it’s not consistent enough to be a main strategy.
 
 ---
 
 ## 1.4 Volatility & Regimes
 
-This section looks at how the market’s volatility and short-term return behaviour change over time, and what that tells us about different regimes.
+This section is about how “noisy” the market is, and how that changes across time and across stocks.
 
----
-
-### 1.4.1 Overall level of volatility
-
-First I looked at the distribution of rolling volatility across all stocks and days.
+### 1.4.1 Overall volatility level
 
 <p align="center">
   <img src="plots/03_rolling_vol_hist.png" width="520">
 </p>
 
 <p align="center">
-  <em>Figure 4. Histogram of 100-day annualised volatility for all stock–day pairs.</em>
+  <em>Figure 9. Histogram of 100-day annualised volatility across all stock–day pairs.</em>
 </p>
 
-**How to read it**
-
-- Each bar counts how many observations had a given 100-day volatility level.
-- Most observations sit between roughly **8% and 22%** annualised volatility.
-- The shape is not a single sharp peak – there are several “humps”, which suggests the market moves through quieter and busier periods.
-
-So the universe is not extremely wild, but volatility is clearly **not constant**.
+Most observations sit roughly between **8% and 22%** annualised volatility, and the distribution has multiple humps, volatility clearly changes over time.
 
 ---
 
 ### 1.4.2 Volatility across days and across stocks
-
-Next I checked how volatility changes **over time** (market-wide) and **between stocks**.
 
 <p align="center">
   <img src="plots/09_cross_sectional_vol_distribution.png" width="520">
 </p>
 
 <p align="center">
-  <em>Figure 5. Distribution of cross-sectional average 100-day volatility (average across all stocks per day).</em>
+  <em>Figure 10. Distribution of cross-sectional average 100-day volatility (average across all stocks per day).</em>
 </p>
 
 <p align="center">
@@ -293,311 +257,365 @@ Next I checked how volatility changes **over time** (market-wide) and **between 
 </p>
 
 <p align="center">
-  <em>Figure 6. Distribution of average 100-day volatility by stock.</em>
+  <em>Figure 11. Distribution of average 100-day volatility by stock.</em>
 </p>
 
-**What they show**
-
-- **By day (Figure 5)**: the cross-sectional average volatility moves around, but the spread is fairly tight. On most days, the “typical” stock is in a similar volatility band.
-- **By stock (Figure 6)**: some names are much more volatile than others over the full sample. There is a clear range from steady stocks to very jumpy ones.
-
-This tells us two things:
-
-1. There is a **market-level volatility state** that slowly changes over time.
-2. There is stable **cross-sectional dispersion**, with some stocks naturally riskier than others.
+Takeaway:
+- Volatility changes over time (market regime),
+- but some stocks are *always* much riskier than others (cross-sectional risk).
 
 ---
 
 ### 1.4.3 Volatility regimes over time
-
-To see how volatility evolves, I looked at a **100-day rolling volatility** of the equal-weight index and marked simple low- and high-volatility bands.
 
 <p align="center">
   <img src="plots/15_market_rolling_vol_regimes.png" width="720">
 </p>
 
 <p align="center">
-  <em>Figure 7. 100-day rolling volatility of the equal-weight index, with 20th and 80th percentile lines.</em>
+  <em>Figure 12. 100-day rolling volatility of the equal-weight index with low/high bands (20th and 80th percentiles).</em>
 </p>
 
-**Reading the graph**
-
-- The blue line is the 100-day rolling volatility.
-- The green dashed line marks the **20th percentile** (low-vol threshold).
-- The red dashed line marks the **80th percentile** (high-vol threshold).
-
-When the blue line is near the green line, the market is in a **calmer regime**. When it is near or above the red line, the market is in a **high-vol regime**.
-
-The plot shows that:
-
-- Volatility clusters: once the market is calm or noisy, it tends to stay that way for a while.
-- The range of volatility is not extreme, but the difference between low and high regimes is still meaningful.
+Volatility clusters. Calm periods stay calm for a while, and noisy periods stay noisy for a while.
 
 ---
 
-### 1.4.4 Volatility is very much per-stock
-
-A key practical finding was that volatility is not just a “market regime” variable — it is **highly cross-sectional**.
+### 1.4.4 Volatility is very stock-specific
 
 <p align="center">
   <img src="plots/19_rolling_volatility_extremes_timeseries.png" width="900">
 </p>
 
 <p align="center">
-  <em>Figure 7A. Rolling 100-day annualised volatility for the top 2 most volatile vs top 2 least volatile stocks.</em>
+  <em>Figure 13. Rolling 100-day volatility for the top 2 most volatile vs top 2 least volatile stocks.</em>
 </p>
 
-- The most volatile names sit around roughly **~0.19 to 0.25** annualised vol.
-- The least volatile names sit around roughly **~0.06 to 0.08** annualised vol.
-- Importantly, this gap is *persistent* — the “high vol” stocks remain high, and the “low vol” stocks remain low.
-
-**Implication:** any strategy that sizes positions uniformly across names is implicitly taking much larger risk in the high-vol stocks. This strongly supports **volatility scaling / risk targeting per instrument** (and explains why naive equal-size signals often get dominated by a small subset of names).
+The high-vol stocks stayed high-vol and the low-vol stocks stayed low-vol. This is why volatility scaling mattered so much.
 
 ---
 
-### 1.4.5 Short-term autocorrelation: momentum vs mean reversion
-
-Volatility alone does not tell us the direction of returns. To see whether short-term moves tend to **continue** (momentum) or **reverse** (mean reversion), I looked at **rolling autocorrelation** of the market index at different lags.
-
-For each lag, I computed the autocorrelation over a rolling 100-day window:
-
-- Values **above zero** mean that returns tend to have the **same sign** as in the past (momentum).
-- Values **below zero** mean that returns tend to have the **opposite sign** (mean reversion).
-
-The red line is a rough **momentum threshold**; the green line is a **mean-reversion threshold**.
-
-#### Lag 1
+### 1.4.5 Short-term autocorrelation over time (market)
 
 <p align="center">
   <img src="plots/16_market_rolling_acf_lag1.png" width="720">
 </p>
 
 <p align="center">
-  <em>Figure 8. 100-day rolling lag-1 autocorrelation of index returns.</em>
+  <em>Figure 14. Rolling 100-day lag-1 autocorrelation of index returns.</em>
 </p>
-
-- The blue line is **almost always positive**.
-- For long stretches it stays above the red momentum threshold.
-- It rarely comes close to the green mean-reversion line.
-
-This means that, day-to-day, the index shows **strong short-term momentum**.
-
-#### Lag 2
 
 <p align="center">
   <img src="plots/16_market_rolling_acf_lag2.png" width="720">
 </p>
 
 <p align="center">
-  <em>Figure 9. 100-day rolling lag-2 autocorrelation of index returns.</em>
+  <em>Figure 15. Rolling 100-day lag-2 autocorrelation of index returns.</em>
 </p>
-
-- Lag-2 autocorrelation is also usually positive.
-- It spends a fair amount of time at or above the momentum threshold, although values are smaller than for lag-1.
-
-So momentum carries some information over **two days**, but weakens compared with lag-1.
-
-#### Lag 5
 
 <p align="center">
   <img src="plots/16_market_rolling_acf_lag5.png" width="720">
 </p>
 
 <p align="center">
-  <em>Figure 10. 100-day rolling lag-5 autocorrelation of index returns.</em>
+  <em>Figure 16. Rolling 100-day lag-5 autocorrelation of index returns.</em>
 </p>
-
-- Around lag-5, the line is much closer to zero.
-- It moves above and below zero and rarely touches the thresholds.
-
-This suggests that by around **five days**, the clear memory in returns has faded. Momentum is weaker and less stable.
-
-#### Lag 10
 
 <p align="center">
   <img src="plots/16_market_rolling_acf_lag10.png" width="720">
 </p>
 
 <p align="center">
-  <em>Figure 11. 100-day rolling lag-10 autocorrelation of index returns.</em>
+  <em>Figure 17. Rolling 100-day lag-10 autocorrelation of index returns.</em>
 </p>
 
-- Lag-10 autocorrelation fluctuates around zero.
-- It almost never reaches the momentum or mean-reversion thresholds.
-
-This indicates **very little predictable structure** at this horizon – returns at a 10-day distance look close to independent.
+Takeaway:
+- Momentum is strongest at **1–2 day** horizons.
+- By 5–10 days it mostly fades toward noise.
 
 ---
 
-### 1.4.6 Lead–Lag Structure (Market vs Stocks)
-
-A natural follow-up question is whether the “market” moves first and individual stocks respond later (or vice versa). To test this, I computed cross-correlations between the equal-weight market return at time *t* and each stock return at time *(t + lag)*.
-
-- **Positive lag** = the market leads the stock  
-- **Negative lag** = the stock leads the market
+### 1.4.6 Lead–Lag structure (Market vs Stocks)
 
 <p align="center">
   <img src="plots/21_lead_lag_heatmap.png" width="900">
 </p>
 
 <p align="center">
-  <em>Figure 12. Lead–lag heatmap: correlation between Market(t) and Stock(t + lag). The strongest structure is concentrated at lag 0.</em>
+  <em>Figure 18. Lead–lag heatmap: correlation between Market(t) and Stock(t + lag). Strongest structure is at lag 0.</em>
 </p>
-
-Two clear patterns show up:
-
-1. **Contemporaneous correlation dominates (lag 0).**  
-   There is a strong band at lag 0 across almost all stocks, meaning most names simply co-move with the market on the same day.
-
-2. **Any predictive lead–lag signal is weak and inconsistent.**  
-   There are occasional pockets where lag +1 looks stronger for specific stocks, but this is not uniform across the universe and is likely fragile.
-
-Averaging across all stocks makes the picture even clearer:
 
 <p align="center">
   <img src="plots/22_avg_lead_lag_profile.png" width="720">
 </p>
 
 <p align="center">
-  <em>Figure 13. Average lead–lag profile (Market vs Universe). The peak is at lag 0; correlations decay quickly as |lag| increases.</em>
+  <em>Figure 19. Average lead–lag profile across the universe. Peak at lag 0, quick decay as |lag| increases.</em>
 </p>
 
-- The average correlation peaks at **lag 0 (~0.16)**.
-- There is a smaller bump at **lag +1 (~0.08)** (market leading by 1 day), but it is much weaker than contemporaneous co-movement.
-- Correlation decays quickly beyond 1–2 days in either direction.
-
-**Conclusion:** lead–lag effects are not a strong, broad edge in this universe. The market and stocks mostly move together contemporaneously, which is more useful for risk/exposure control than for clean prediction.
+Conclusion: lead–lag wasn’t a strong “predictive” edge. Most of the relationship is same-day co-movement.
 
 ---
 
-### 1.4.7 Conclusions on volatility and regimes
+### 1.4.7 Summary of what the market analysis told us
 
-Putting all of this together:
-
-1. **Momentum is mostly market-wide, not per-stock.**  
-   The market index has strong lag-1 autocorrelation (≈0.4), but even the top 2 per-stock ACF names have meaningfully lower and unstable autocorrelation. This implies momentum is more suitable as a **market exposure / regime filter** than as a single-stock selection signal.
-
-2. **Volatility is very much per-stock.**  
-   Some stocks are persistently ~3–4× more volatile than others (Figure 7A). Risk is dominated by which names you trade and how you size them, so per-stock volatility scaling is essential.
-
-3. **Volatility varies over time as well.**  
-   The index 100-day volatility moves between low and high bands, forming clear volatility regimes. Volatility also clusters: calm periods and noisy periods tend to come in blocks rather than switching every few days.
-
-4. **Short-term momentum is strongest at very short lags.**  
-   The rolling autocorrelation plots show clear positive dependence at 1–2 day lags. By 5–10 days, the signal is much weaker and often indistinguishable from noise.
-
-5. **Mean reversion is not a dominant feature at daily horizons.**  
-   Autocorrelation is rarely strongly negative at the market level, and per-stock mean reversion is inconsistent. There are no long periods where the market consistently shows strong bounce-back behaviour.
-
-6. **Lead–lag is mostly contemporaneous.**  
-   The heatmap and average profile show the strongest relationship at lag 0, with only modest lag ±1 effects. This is more useful for understanding market coupling than building robust predictive signals.
-
-These observations suggest that any strategy in this universe should:
-
-- be aware that **risk changes over time**,  
-- respect the fact that **short-term market momentum exists but fades quickly**,  
-- size carefully because **volatility is highly stock-specific**, and  
-- be cautious about relying on **daily mean reversion** or **lead–lag prediction**, which are weak and inconsistent in the data.
+- The strongest signal was **market-level momentum** (short horizon).
+- Mean reversion wasn’t consistent at the daily level.
+- Cross-asset structure was weak, so pairs ideas didn’t look viable.
+- Risk was dominated by **volatility differences between stocks**, so sizing mattered a lot.
 
 ---
 
 # 2) Algorithm Analysis
 
+This section explains what we submitted, how we tested it, how we picked parameters, and what the results looked like. The theme is: keep it simple, testable, and hard to overfit.
+
+---
+
 ## 2.1 Final Strategy Overview
 
-- **Core edges:**  
-  Single-asset mean reversion combined with regime filters
+Our final submission is a **market (index) momentum strategy** with **volatility-scaled sizing**.
 
-- **Execution style:**  
-  Daily market execution with full position rebalancing
+In plain terms:
 
-- **Risk management:**  
-  Position caps, volatility scaling, and regime-based exposure reduction
-
-- **Fail-safes:**  
-  Position clipping awareness, conservative defaults, and cooldown logic
-
----
-
-## 2.2 Signal Construction
-For each signal:
-- inputs and preprocessing
-- mathematical definition
-- parameter choices
-- intuition for why it should work in this environment
+- Build an **equal-weight market index** from the 50 instruments.
+- Measure whether the index has been moving up or down over a short window (lookback).
+- If the move is strong enough (passes a threshold), take exposure:
+  - market up → go **long**
+  - market down → go **short**
+  - small / noisy move → stay **flat**
+- Size each instrument using realised volatility, so risk isn’t dominated by a few wild stocks.
+- Enforce constraints (±$10k cap, integer shares, clipping).
 
 ---
 
-## 2.3 Portfolio Construction & Risk
-- position sizing rules
-- exposure caps
-- diversification logic
-- drawdown and volatility controls
+## 2.2 Trading Analysis (Example Trace: Stock 38)
+
+<p align="center">
+  <img src="plots/stock_38_trade_trace.png" width="900">
+</p>
+
+<p align="center">
+  <em>Figure 20. Stock 38 trade trace: price + trades, equity curve (gross vs net), and position held.</em>
+</p>
+
+What we wanted to see:
+- positions held in blocks (not constant flipping),
+- costs clearly visible (gross vs net gap),
+- churn mainly happening when the signal is choppy (and that’s where we lose).
 
 ---
 
-## 2.4 Backtesting Methodology
-- execution assumptions
-- transaction cost modelling
-- walk-forward validation
-- known sources of bias and mitigation
+## 2.3 Backtesting Methodology
+
+We started with the standard evaluator most teams used (`eval.py` style). We didn’t rewrite the evaluator, we extended the same logic to run **walk-forward testing** and basic robustness checks.
+
+### 2.3.1 The original `eval.py` (single run)
+
+The baseline script:
+- loads prices,
+- steps forward day-by-day,
+- calls `getMyPosition(history)` with no lookahead,
+- clips positions to the ±$10k limit,
+- charges 5 bps commission on traded dollar volume,
+- records daily P&L and produces summary plots.
+
+It can score the **last N days** or the **full dataset**, depending on `test_days`.  
+The limitation is that it’s still **one window** (one slice of time).
+
+### 2.3.2 What we added: walk-forward testing
+
+Walk-forward testing repeats the evaluation across many consecutive time blocks:
+- warm-up period,
+- score a block,
+- roll forward,
+- score the next block,
+- repeat.
+
+This makes it much harder to fool ourselves with one lucky period.
+
+### 2.3.3 Quick robustness checks
+
+We also added a couple of cheap stress tests:
+- **Noise test:** small random noise added to returns (checks fragility).
+- **Shuffle/shift test:** break time alignment to ensure performance drops when structure is removed.
 
 ---
 
-## 2.5 Parameter Selection & Robustness
-- grid search ranges
-- stability regions versus sharp optima
-- ablation tests removing individual components
+## 2.4 Parameter Selection & Robustness
+
+The main knobs were:
+1. lookback window,
+2. threshold.
+
+### 2.4.1 Parameter sweep (lookback vs threshold)
+
+<p align="center">
+  <img src="plots/parameter_sweep.png" width="950">
+</p>
+
+<p align="center">
+  <em>Figure 21. Lookback vs threshold sweep. Green = good, red = bad.</em>
+</p>
+
+We chose settings from the middle of the “good region”, not the single best cell, because stability mattered more than squeezing out one extra in-sample point.
 
 ---
 
-## 2.6 Results Snapshot
-- leaderboard score / rank (if shareable)
-- cumulative P&L curves
-- drawdowns and volatility
-- periods of strongest and weakest performance
+## 2.5 Results Snapshot
+
+We competed as **team_raj** (shown as **Team Raj** on the official spreadsheets).
+
+### Interim leaderboard
+- **Rank:** 5th  
+- **Score:** **19.77**
+
+### Final general round leaderboard
+- **Rank:** **4th**
+- **Score:** **22.26**
+
+### Thoughts on other teams’ results (and how much was variance)
+
+- The top of the leaderboard was tight, small differences (or a few good/bad days) can move ranks.
+- Teams above us likely did one extra thing really well: better turnover control, better sizing, better regime handling, or a small extra signal that didn’t add churn.
+- Some standout scores could also be “right idea, right regime”. If the final window strongly favoured one style, that strategy looks amazing even if it’s less stable elsewhere.
 
 ---
 
 # 3) Learnings
 
-### Technical
-- data handling and backtesting pitfalls
-- cost sensitivity and turnover control
+This competition was honestly a good reminder that most of the work in trading research is **eliminating bad ideas**, not finding fancy ones. The dataset looks simple (daily prices), but the constraints (costs + position caps + integer shares) make a lot of “textbook” strategies fall apart fast.
 
-### Quant intuition
-- where signal genuinely exists versus noise
-- importance of regime awareness
+---
 
-### Process
-- faster elimination of weak ideas
-- earlier focus on robustness
+## 3.1 Technical Learnings
 
-**Biggest mistakes**
-- <mistake 1>
-- <mistake 2>
+### Backtesting is easy to get wrong
+Even with daily data, it’s very easy to accidentally introduce bugs that make results look way better than they should. The biggest things I had to stay on top of were:
 
-**What I’d do differently**
-- <improvement 1>
-- <improvement 2>
+- **No lookahead**: the bot must only see prices up to day *t* when deciding positions for day *t*.
+- **Trading is on position changes**: costs come from **delta positions**, not from holding.
+- **Position clipping matters**: the ±$10k cap interacts with price, so the share limit changes every day.
+
+A strategy can look “stable” just because the evaluator silently clipped it into something else, or because the backtest is accidentally using tomorrow’s info. I found it was worth keeping the evaluator extremely simple and transparent.
+
+### Turnover is the silent killer
+Many strategies looked decent before costs and then became useless after commission. The best improvements I made weren’t about finding new signals — they were about reducing pointless trades:
+
+- adding a **threshold** so the bot stays flat when the market move is tiny
+- avoiding rapid flip-flopping in choppy periods
+- accepting that “doing nothing” is often the best trade
+
+### Risk is mostly a sizing problem
+The volatility differences between stocks were huge and persistent. Without volatility scaling, a few high-vol names dominate the whole P&L (and dominate your drawdowns too). Vol scaling wasn’t just a “nice to have” — it was the difference between a strategy behaving sensibly vs being driven by a handful of instruments.
+
+---
+
+## 3.2 Quant / Market Learnings
+
+### In this dataset, the best signal was the simplest one
+From the market analysis, most of the structure was:
+
+- weak pairwise correlation between stocks (pairs trading basically dead)
+- weak and unstable single-stock momentum
+- strong **market-level** short-horizon momentum (especially 1–2 day effects)
+
+Once I accepted that, it made the “right” strategy direction way clearer: stop trying to be clever at the stock level and just trade the market regime carefully.
+
+### Mean reversion wasn’t a free lunch
+I expected at least some clean bounce-back after extreme moves, but the market more often showed **follow-through** rather than snapping back. That doesn’t mean mean reversion never works — it just wasn’t dominant at the daily horizon in this universe.
+
+### Regimes matter more than indicators
+The strategy didn’t fail because momentum “stopped existing”. It mostly failed in specific periods where the market got choppy and direction flipped often. So a lot of the edge comes from:
+
+- recognising when conditions are good for the signal
+- trading less when the regime is unclear
+
+---
+
+## 3.3 Process Learnings
+
+### The fastest progress came from deleting ideas early
+At the start I spent time exploring lots of different strategy styles. The turning point was getting ruthless about filtering:
+
+- if a strategy didn’t survive costs, it was dead
+- if it only worked in one small slice of time, it was suspicious
+- if it needed heavy tuning, it was probably overfit
+
+Once I started prioritising robustness over complexity, my iteration speed improved a lot.
+
+### A small number of good plots beats “plot spam”
+It’s really tempting to produce dozens of charts, but the most useful ones were the ones that directly answered a decision:
+
+- “Is there any cross-asset structure?” (correlation matrix)
+- “Is momentum real at the market level?” (market ACF / rolling ACF)
+- “Does mean reversion actually show up?” (next-day scatter / bounceback extremes)
+- “Is volatility mainly time-varying or stock-specific?” (vol distributions / extremes)
+
+Everything else was mostly noise.
+
+---
+
+## 3.4 Biggest Mistakes
+
+- **Over-testing fragile ideas early.**  
+  I spent too long on strategies that were never going to survive the low-correlation structure and commission model.
+
+- **Not focusing on churn control from day one.**  
+  I initially treated costs as something to “add later”. In reality, costs decide what’s even feasible.
+
+- **Trying to extract per-stock alpha in a market that didn’t support it.**  
+  The data strongly suggested market-level structure was the main thing. I should’ve committed to that direction earlier.
+
+---
+
+## 3.5 What I’d Do Differently Next Time
+
+- **Work backwards from the scoring function earlier.**  
+  Since the score penalises volatility, I’d treat variance reduction and turnover reduction as first-class goals from the start.
+
+- **Spend more time on “whipsaw damage control.”**  
+  My strategy works well in clean regimes. The main weakness is chop. Next iteration I’d focus on better entry/exit smoothing (without increasing trading frequency).
+
+- **Build a clearer “regime dashboard.”**  
+  A few simple signals (volatility state, momentum strength, trend consistency) could make it easier to scale risk down when conditions are bad.
 
 ---
 
 # 4) Conclusion
 
-- **What worked best:**  
-  Regime-filtered single-asset signals
+This Algothon ended up being less about inventing a fancy model and more about finding **one real edge** and making it **tradable under constraints**.
 
-- **What didn’t work:**  
-  Cross-asset relative-value strategies in a low-correlation universe
+### What worked best
+- Trading **market-level momentum** rather than trying to pick individual winners and losers.
+- Using a **threshold** to avoid noise trading and reduce commission drag.
+- Using **volatility scaling** so risk was spread more evenly across the universe.
 
-- **Final takeaways:**  
-  Robustness beats complexity; elimination is as important as discovery
+### What didn’t work
+- Cross-asset relative value ideas (pairs / cointegration) — the correlation structure was simply too weak.
+- Broad “fade extremes” mean reversion — the market often showed follow-through instead of snapping back.
+- Anything that required frequent trading — costs quickly wiped out the edge.
 
-- **Future work:**  
-  Explore richer regime definitions and alternative anchoring mechanisms
+### Final takeaway
+In this environment, **robustness beats complexity**. The strategies that survive are the ones that:
+- trade infrequently,
+- size risk properly,
+- and rely on structure that shows up repeatedly (not just once).
+
+### Future work
+If I were to iterate on this bot, I’d stay in the same general family (market regime + risk control) and focus on:
+- better handling of choppy periods,
+- more deliberate risk scaling across volatility regimes,
+- and adding small, low-turnover “helper signals” (only if they improve stability without increasing churn).
 
 ---
 
 ## Repository Structure
-<describe folders and files>
+
+- `main.py` — final submission bot (contains `getMyPosition`)
+- `eval.py` — baseline evaluator (single run)
+- `eval_full.py` — extended walk-forward + robustness tests
+- `market_analyser.py` — plots to identify good strategies and eliminate weak ones
+- `trade_analyser.py` — diagnostic tool to visualise the algorithm’s trades  
+- `plots/` — research and diagnostics figures used in this write-up
+- `images/` — team photos
+
