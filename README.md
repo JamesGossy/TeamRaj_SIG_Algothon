@@ -435,7 +435,13 @@ We chose settings from the middle of the “good region”, not the single best 
 
 ## 2.5 Results Snapshot
 
-We competed as **team_raj** (shown as **Team Raj** on the official spreadsheets).
+<p align="center">
+  <img src="plots/cumulative_pl.png" width="900">
+</p>
+
+<p align="center">
+  <em>Figure 22. Cumulative PnL: Shows consistant profits over time over the entire Algothon dataset.</em>
+</p>
 
 ### Interim leaderboard
 - **Rank:** 5th  
@@ -447,9 +453,41 @@ We competed as **team_raj** (shown as **Team Raj** on the official spreadsheets)
 
 ### Thoughts on other teams’ results (and how much was variance)
 
-- The top of the leaderboard was tight, small differences (or a few good/bad days) can move ranks.
-- Teams above us likely did one extra thing really well: better turnover control, better sizing, better regime handling, or a small extra signal that didn’t add churn.
-- Some standout scores could also be “right idea, right regime”. If the final window strongly favoured one style, that strategy looks amazing even if it’s less stable elsewhere.
+A few things stood out when looking at the leaderboard:
+
+**1) The top of the leaderboard was tight.**  
+Scores near the top were close enough that small differences in behaviour (or just a few extra good/bad days) could shuffle ranks. When the spread is small, it’s hard to claim “Team A is definitely better than Team B” just from final rank alone.
+
+**2) The winners probably did *one* extra thing beyond a basic signal.**  
+Our strategy is basically “market direction + risk control”. If someone beat that, the most likely reasons are:
+- better **position sizing** (more accurate volatility targeting, better handling of outliers)
+- smarter **turnover control** (fewer unnecessary flips, better use of thresholds / hysteresis)
+- better **risk limits** (avoiding taking risk during messy periods, or scaling down in high-vol regimes)
+- or finding a small **extra alpha source** on top (even a weak edge can matter if it doesn’t add turnover)
+
+**3) Some high scores could definitely be “right idea, right regime”.**  
+If the evaluation period happened to favour:
+- clean market momentum stretches,
+- low whipsaw,
+- or a volatility pattern that suited a certain filter,
+then strategies that lean harder into that regime will look amazing. That doesn’t mean they’ll hold up the next time.
+
+That’s exactly why we valued walk-forward testing: it’s not perfect, but it reduces the chance that my strategy only worked because the last block happened to match it.
+
+**4) The middle of the pack is where overfitting usually hides.**  
+A lot of teams probably had strategies that:
+- looked great on one backtest,
+- had hidden churn,
+- or were tuned too tightly to one dataset.
+Those strategies can land anywhere depending on noise. If you’re relying on fragile edges, rank becomes much more about variance.
+
+**My honest takeaway:**  
+I think our final placement is a mix of:
+- a real edge (market momentum was genuinely present),
+- solid risk/cost handling (threshold + vol scaling),
+- and some unavoidable variance (because the leaderboard is tight at the top).
+
+If We had another iteration, the first place we’d look to improve would be **reducing whipsaw damage** (e.g., smoother entry/exit logic or regime persistence) without increasing trading frequency.
 
 ---
 
