@@ -505,192 +505,26 @@ These observations suggest that any strategy in this universe should:
 
 ## 2.1 Final Strategy Overview
 
-My final submission is a **market-directional momentum strategy** with **per-instrument volatility scaling**.
+- **Core edges:**  
+  Single-asset mean reversion combined with regime filters
 
-At a high level, it does two things:
+- **Execution style:**  
+  Daily market execution with full position rebalancing
 
-1) **Decides market direction (risk-on / risk-off)** using short-horizon momentum of an equal-weight “index”.
-2) **Allocates risk across the 50 instruments** by sizing each position inversely to its recent realized volatility (so high-vol names get smaller size, low-vol names get larger size).
+- **Risk management:**  
+  Position caps, volatility scaling, and regime-based exposure reduction
 
-This design directly matches what showed up in the data:
-
-- **Momentum exists primarily at the market level** (index-level persistence is much cleaner than per-stock momentum).
-- **Volatility is strongly cross-sectional** (some names are persistently 3–4× more volatile), so sizing must be risk-aware.
-
----
-
-### Signal definition (index momentum)
-
-Let:
-
-- \( P_{i,t} \) be the price of instrument \( i \) on day \( t \)
-- \( I_t = \frac{1}{N}\sum_{i=1}^N P_{i,t} \) be the equal-weight index proxy
-- `LOOKBACK = 10`
-
-Compute the index momentum:
-
-\[
-m_t = \frac{I_t}{I_{t-10}} - 1
-\]
-
-Apply a no-trade band (`THRESH = 0.002`):
-
-- If \( |m_t| < 0.002 \) → **go flat** (all positions 0)
-- Else:
-  - If \( m_t > 0 \) → **direction = +1** (long bias)
-  - If \( m_t < 0 \) → **direction = -1** (short bias)
-
-So when the market proxy is trending up/down over ~2 weeks by more than 20 bps, the strategy takes a directional stance.
+- **Fail-safes:**  
+  Position clipping awareness, conservative defaults, and cooldown logic
 
 ---
 
-### Position sizing (volatility-scaled, per instrument)
-
-For each instrument \( i \), estimate recent realized volatility from daily returns over `VOL_WINDOW = 10` days:
-
-\[
-\sigma_i = \mathrm{std}\left(r_{i,t-10:t-1}\right)
-\quad\text{where}\quad
-r_{i,t} = \frac{P_{i,t}}{P_{i,t-1}} - 1
-\]
-
-Then compute target shares:
-
-\[
-q_i = \left\lfloor \frac{\text{TARGET\_DOLLAR}}{P_{i,t}\cdot \sigma_i} \right\rfloor
-\]
-
-Interpretation:  
-\(P\cdot\sigma\) is an estimate of **daily $-move per share**, so dividing a constant budget by this approximates **risk targeting** (roughly equalizing expected daily volatility contribution across names).
-
-Finally:
-
-- Clip to the hard per-instrument exposure cap \( |q_i \cdot P_{i,t}| \le 10000 \)
-- Enforce at least 1 share for any non-zero position (to avoid “signal but 0 size” edge cases)
-- Apply the global direction:
-
-\[
-\text{position}_i = \text{direction} \cdot q_i
-\]
-
----
-
-### Why this is robust (and intentionally “simple”)
-
-- It uses **one primary edge** (market momentum) rather than mining weak cross-sectional structure.
-- It includes a **no-trade zone** to reduce churn and commissions when the market is drifting.
-- It uses **volatility-aware sizing** so a few noisy names don’t dominate risk and P\&L.
-- It respects the environment’s key constraint: **±$10k per instrument** at trade time.
-
-
----
-
-## 2.2 Trading Analysis
-
-This section explains what trades the algorithm places, how to interpret them, and how to evaluate whether a “trade” was successful.
-
-### 2.2.1 What counts as a trade in this environment?
-
-The evaluation engine executes trades via **position changes**:
-
-- Each day \(t\), the algo outputs a desired position vector \( \mathbf{q}_t \).
-- The engine trades the delta:
-  \[
-  \Delta \mathbf{q}_t = \mathbf{q}_t - \mathbf{q}_{t-1}
-  \]
-- Commission is charged on total dollar volume traded:
-  \[
-  \text{commission}_t = \text{commRate} \cdot \sum_i \left| \Delta q_{i,t} \right| \cdot P_{i,t}
-  \]
-  with `commRate = 0.0005`.
-
-So “a trade” isn’t a single buy/sell ticket — it’s the **lifecycle of a position** (enter → hold/resize → exit).
-
----
-
-### 2.2.2 Lifecycle interpretation (LONG / SHORT / FLAT)
-
-Because the strategy uses *one market direction signal*, each instrument is typically in one of three regimes:
-
-- **LONG:** position \( q_i > 0 \)
-- **SHORT:** position \( q_i < 0 \)
-- **FLAT:** position \( q_i = 0 \)
-
-In a single-stock view:
-
-- A **red down-arrow** indicates an **entry into a short regime** (position becomes negative).
-- A **green up-arrow** indicates an **entry into a long regime** (position becomes positive).
-- When the position later returns to **0**, that is an **exit** from that regime — i.e., you’ve stopped shorting/longing that stock.
-
-This is exactly how to read your plot: the bottom panel (position) is the ground truth.
-
----
-
-### 2.2.3 Example: single-stock trace (signals + equity + position)
-
-The figure below shows a 250-day window for **Stock 38**, highlighting:
-
-- regime shading (green = long held, red = short held),
-- entry markers,
-- and the resulting gross vs net equity curve (commissions included).
-
-<p align="center">
-  <img src="plots/stock38_trade_trace.png" width="900">
-</p>
-
-<p align="center">
-  <em>Figure 14. Stock 38 trade regimes (long/short/flat), entries/exits, and equity curve over the same window.</em>
-</p>
-
-Two important takeaways from this plot:
-
-1) **Exiting to 0 means the trade is closed.**  
-   Once the position returns to 0, that short/long “episode” is finished.
-
-2) **Profit is not determined by entry/exit markers alone.**  
-   Because sizing is volatility-scaled, the position can be **resized** while the direction stays the same (extra buys/sells inside the same regime). Those intermediate trades affect both P&L and commissions.
-
----
-
-### 2.2.4 How to tell if a trade was profitable
-
-Define a **trade episode** for a single stock as a maximal contiguous block of days where the position sign is constant and non-zero.
-
-For one episode:
-
-- Entry day: first day the position becomes non-zero (or flips sign)
-- Exit day: day the position returns to 0 (or flips sign)
-
-The simplest way to compute whether the episode made money is to compute **marked-to-market P&L across the holding window**, including commissions from the actual executed deltas.
-
-For a single stock, gross P&L over time is driven by:
-
-\[
-\text{grossPnL} \approx \sum_{t \in \text{hold}} q_t \cdot (P_{t+1}-P_t)
-\]
-
-- If you are **long** (\(q_t>0\)), you profit when \(P\) rises.
-- If you are **short** (\(q_t<0\)), you profit when \(P\) falls (because \(q_t(P_{t+1}-P_t)\) becomes positive when \(P_{t+1}<P_t\)).
-
-Net episode P&L is:
-
-\[
-\text{netPnL} = \text{grossPnL} - \sum_{t \in \text{episode}} \text{commRate}\cdot |\Delta q_t|\cdot P_t
-\]
-
-So a “successful trade” is simply an episode with **netPnL > 0**.
-
-In practice, the cleanest workflow is:
-
-- detect each episode (enter → exit),
-- compute:
-  - episode duration
-  - grossPnL, netPnL
-  - max adverse excursion (MAE) / max favorable excursion (MFE)
-  - hit-rate across episodes (how many net winners)
-
-That’s what I used the single-stock analysis script for: turning regime flips into a concrete trade log with per-trade P&L.
-
+## 2.2 Signal Construction
+For each signal:
+- inputs and preprocessing
+- mathematical definition
+- parameter choices
+- intuition for why it should work in this environment
 
 ---
 

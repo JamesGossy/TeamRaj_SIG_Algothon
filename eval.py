@@ -79,29 +79,42 @@ if __name__ == "__main__":
     print(f"totDvolume:   {dvol:.0f}")
     print(f"Score:        {score:.2f}")
 
-    # ─── PLOTS ─────────
+# ─── PLOTS ─────────
+    import os
+
+    # Ensure the plot directory exists
+    plot_dir = "plot"
+    if not os.path.exists(plot_dir):
+        os.makedirs(plot_dir)
+
     days = np.arange(1, len(pll) + 1)
 
+    # 1. Daily P/L Bar Chart
     plt.figure(figsize=(10,4))
     plt.bar(days, pll, width=1.0)
-    plt.title('Daily P/L (last 50 days)')
+    plt.title('Daily P/L (last 200 days)')
     plt.xlabel('Test Day')
     plt.ylabel('P/L ($)')
     plt.grid(True)
+    plt.savefig(os.path.join(plot_dir, "daily_pl.png")) # Save plot
 
+    # 2. Cumulative P/L Line Chart
     plt.figure(figsize=(10,4))
     plt.plot(days, np.cumsum(pll), lw=1)
-    plt.title('Cumulative P/L (last 50 days)')
+    plt.title('Cumulative P/L (last 200 days)')
     plt.xlabel('Test Day')
     plt.ylabel('Cumulative P/L ($)')
     plt.grid(True)
+    plt.savefig(os.path.join(plot_dir, "cumulative_pl.png")) # Save plot
 
+    # 3. Daily P/L Histogram
     plt.figure(figsize=(8,4))
     plt.hist(pll, bins=30, edgecolor='black')
-    plt.title('Distribution of Daily P/L (last 50 days)')
+    plt.title('Distribution of Daily P/L (last 200 days)')
     plt.xlabel('Daily P/L ($)')
     plt.ylabel('Frequency')
     plt.grid(True)
+    plt.savefig(os.path.join(plot_dir, "pl_distribution.png")) # Save plot
 
     plt.tight_layout()
     plt.show()
