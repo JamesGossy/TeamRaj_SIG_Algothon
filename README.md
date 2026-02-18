@@ -127,7 +127,6 @@ Because the correlation structure showed **uniformly low cross-asset correlation
 
 Given this, I decided not to proceed with deeper analysis such as formal cointegration testing. The data did not provide a strong enough foundation to justify further research into pairs trading, so this approach was excluded from the final algorithm.
 
-
 ---
 
 ## 1.2 Momentum
@@ -153,18 +152,43 @@ To test whether directional moves tend to persist, I examined the autocorrelatio
 </p>
 
 <p align="center">
-  <em>Figure 3. Autocorrelation function (ACF) of daily returns for the equal-weight market index. Lag 1 and lag 2 are strongly positive and exceed the confidence band, indicating short-horizon return persistence.</em>
+  <em>Figure 3. Autocorrelation function (ACF) of daily returns for the equal-weight market index. Lag 1 is strongly positive (around ~0.4) and exceeds the confidence band, indicating short-horizon return persistence.</em>
 </p>
 
-### Evidence for short-horizon momentum
+### Market-level momentum looks real
 
-The ACF in Figure 3 shows clear positive autocorrelation at the first few lags, with lag 1 around 0.4 and lag 2 around 0.2 to 0.25. Both exceed the confidence band, supporting the presence of statistically meaningful short-term persistence in market returns.
+The market index shows clear positive autocorrelation at short lags (strongest at lag 1, still positive at lag 2). In practical terms, this implies that recent market direction carries information for the next one to two trading days, which is consistent with **short-horizon momentum**.
 
-In practical terms, this implies that recent market direction carries information for the next one to two trading days, which is consistent with short-horizon momentum. The effect appears concentrated in the earliest lags, so momentum signals based on recent history (days to a couple of weeks) are more justified by these diagnostics than long-horizon trend-following.
+### But per-stock momentum is weak / inconsistent
+
+Even when we explicitly look for the **stocks with the strongest rolling autocorrelation**, the effect is much smaller and far less stable than the market index.
+
+<p align="center">
+  <img src="plots/20A_stock_rolling_acf_lag1_top2.png" width="720">
+</p>
+
+<p align="center">
+  <em>Figure 3A. Rolling 100-day lag-1 autocorrelation for the top 2 highest-ACF stocks. These are the “best case” names for single-stock momentum.</em>
+</p>
+
+- The top two stocks’ rolling lag-1 ACF spends a lot of time near **0 to 0.15**, occasionally spiking above **0.2**, and sometimes turning negative.
+- Compared with the market’s lag-1 ACF (≈ **0.4**), even the *best* single-name momentum is substantially weaker.
+
+For contrast, the bottom-ACF stocks show that negative autocorrelation exists, but it also isn’t clean or persistent:
+
+<p align="center">
+  <img src="plots/20B_stock_rolling_acf_lag1_bottom2.png" width="720">
+</p>
+
+<p align="center">
+  <em>Figure 3B. Rolling 100-day lag-1 autocorrelation for the bottom 2 lowest-ACF stocks. These names skew negative on average, but still exhibit unstable swings and occasional spikes.</em>
+</p>
 
 ### Conclusion
 
-Overall, the market structure suggested momentum was viable, but primarily as a short-horizon effect. Individual stocks showed large dispersion over time, and the equal-weight market returns displayed strong positive autocorrelation at early lags. This supported focusing momentum research on short lookback windows that align with where persistence was most visible.
+- **Momentum exists primarily at a market-wide level.** The index shows strong short-lag persistence (lag-1 ACF ~0.4).
+- **Momentum is not reliably tradable per-stock.** Even the top-ACF stocks have much weaker and less stable autocorrelation than the market proxy.
+- Practically, this pushed momentum usage toward **market regime / exposure filters**, rather than a “rank stocks by momentum and buy winners” approach.
 
 ---
 
@@ -218,13 +242,9 @@ In the graph, most stocks cluster near zero with a slight positive tilt. This me
 - A small amount of short-term continuation is present in some names.
 - Any mean-reversion strategy would need to be selective rather than applied broadly.
 
-In simple terms: yesterday’s move usually doesn’t strongly predict today’s move — and when it does, it slightly favors continuation rather than reversal.
-
 ### Conclusion
 
 Across both the market proxy and the cross-section, the diagnostics do not support **simple daily mean reversion** as a primary edge. One-day dynamics show continuation, “extreme” moves tend to follow through, and single-name short-horizon mean reversion appears weak and inconsistent. Any mean reversion approach in this environment would need to be highly selective (instrument-level selection or specialised triggers) rather than applied as a universal fade rule.
-
-
 
 ---
 
@@ -315,7 +335,27 @@ The plot shows that:
 
 ---
 
-### 1.4.4 Short-term autocorrelation: momentum vs mean reversion
+### 1.4.4 Volatility is very much per-stock
+
+A key practical finding was that volatility is not just a “market regime” variable — it is **highly cross-sectional**.
+
+<p align="center">
+  <img src="plots/19_rolling_volatility_extremes_timeseries.png" width="900">
+</p>
+
+<p align="center">
+  <em>Figure 7A. Rolling 100-day annualised volatility for the top 2 most volatile vs top 2 least volatile stocks.</em>
+</p>
+
+- The most volatile names sit around roughly **~0.19 to 0.25** annualised vol.
+- The least volatile names sit around roughly **~0.06 to 0.08** annualised vol.
+- Importantly, this gap is *persistent* — the “high vol” stocks remain high, and the “low vol” stocks remain low.
+
+**Implication:** any strategy that sizes positions uniformly across names is implicitly taking much larger risk in the high-vol stocks. This strongly supports **volatility scaling / risk targeting per instrument** (and explains why naive equal-size signals often get dominated by a small subset of names).
+
+---
+
+### 1.4.5 Short-term autocorrelation: momentum vs mean reversion
 
 Volatility alone does not tell us the direction of returns. To see whether short-term moves tend to **continue** (momentum) or **reverse** (mean reversion), I looked at **rolling autocorrelation** of the market index at different lags.
 
@@ -389,33 +429,75 @@ This indicates **very little predictable structure** at this horizon – returns
 
 ---
 
-### 1.4.6 Conclusions on volatility and regimes
+### 1.4.6 Lead–Lag Structure (Market vs Stocks)
+
+A natural follow-up question is whether the “market” moves first and individual stocks respond later (or vice versa). To test this, I computed cross-correlations between the equal-weight market return at time *t* and each stock return at time *(t + lag)*.
+
+- **Positive lag** = the market leads the stock  
+- **Negative lag** = the stock leads the market
+
+<p align="center">
+  <img src="plots/21_lead_lag_heatmap.png" width="900">
+</p>
+
+<p align="center">
+  <em>Figure 12. Lead–lag heatmap: correlation between Market(t) and Stock(t + lag). The strongest structure is concentrated at lag 0.</em>
+</p>
+
+Two clear patterns show up:
+
+1. **Contemporaneous correlation dominates (lag 0).**  
+   There is a strong band at lag 0 across almost all stocks, meaning most names simply co-move with the market on the same day.
+
+2. **Any predictive lead–lag signal is weak and inconsistent.**  
+   There are occasional pockets where lag +1 looks stronger for specific stocks, but this is not uniform across the universe and is likely fragile.
+
+Averaging across all stocks makes the picture even clearer:
+
+<p align="center">
+  <img src="plots/22_avg_lead_lag_profile.png" width="720">
+</p>
+
+<p align="center">
+  <em>Figure 13. Average lead–lag profile (Market vs Universe). The peak is at lag 0; correlations decay quickly as |lag| increases.</em>
+</p>
+
+- The average correlation peaks at **lag 0 (~0.16)**.
+- There is a smaller bump at **lag +1 (~0.08)** (market leading by 1 day), but it is much weaker than contemporaneous co-movement.
+- Correlation decays quickly beyond 1–2 days in either direction.
+
+**Conclusion:** lead–lag effects are not a strong, broad edge in this universe. The market and stocks mostly move together contemporaneously, which is more useful for risk/exposure control than for clean prediction.
+
+---
+
+### 1.4.7 Conclusions on volatility and regimes
 
 Putting all of this together:
 
-1. **Volatility varies over time.**  
+1. **Momentum is mostly market-wide, not per-stock.**  
+   The market index has strong lag-1 autocorrelation (≈0.4), but even the top 2 per-stock ACF names have meaningfully lower and unstable autocorrelation. This implies momentum is more suitable as a **market exposure / regime filter** than as a single-stock selection signal.
+
+2. **Volatility is very much per-stock.**  
+   Some stocks are persistently ~3–4× more volatile than others (Figure 7A). Risk is dominated by which names you trade and how you size them, so per-stock volatility scaling is essential.
+
+3. **Volatility varies over time as well.**  
    The index 100-day volatility moves between low and high bands, forming clear volatility regimes. Volatility also clusters: calm periods and noisy periods tend to come in blocks rather than switching every few days.
 
-2. **Stocks have different baseline risk.**  
-   Some names are naturally more volatile than others. Treating all stocks as if they have the same risk would be misleading.
-
-3. **Short-term momentum is strongest at very short lags.**  
+4. **Short-term momentum is strongest at very short lags.**  
    The rolling autocorrelation plots show clear positive dependence at 1–2 day lags. By 5–10 days, the signal is much weaker and often indistinguishable from noise.
 
-4. **Mean reversion is not a dominant feature at daily horizons.**  
-   Autocorrelation is rarely strongly negative, either for the index or across individual stocks. There are no long periods where the market consistently shows strong bounce-back behaviour.
+5. **Mean reversion is not a dominant feature at daily horizons.**  
+   Autocorrelation is rarely strongly negative at the market level, and per-stock mean reversion is inconsistent. There are no long periods where the market consistently shows strong bounce-back behaviour.
 
-5. **Regimes can be described by both volatility and autocorrelation.**  
-   - A **high-vol, positive-autocorrelation** regime looks like a strong trend with large swings.  
-   - A **low-vol, positive-autocorrelation** regime is calmer but still directional.  
-   - Periods where autocorrelation is near zero look more like **noise-dominated** markets, where simple directional bets are harder to justify.
+6. **Lead–lag is mostly contemporaneous.**  
+   The heatmap and average profile show the strongest relationship at lag 0, with only modest lag ±1 effects. This is more useful for understanding market coupling than building robust predictive signals.
 
 These observations suggest that any strategy in this universe should:
 
 - be aware that **risk changes over time**,  
-- respect the fact that **short-term momentum exists but fades quickly**, and  
-- be cautious about relying on **daily mean reversion**, which is weak and inconsistent in the data.
-
+- respect the fact that **short-term market momentum exists but fades quickly**,  
+- size carefully because **volatility is highly stock-specific**, and  
+- be cautious about relying on **daily mean reversion** or **lead–lag prediction**, which are weak and inconsistent in the data.
 
 ---
 
