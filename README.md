@@ -9,11 +9,11 @@
 ## Team
 
 <p align="center">
-  <img src="images/james_goss.jpeg" width="520" />
+  <img src="images/algothon_team.jpeg" width="520" />
 </p>
 
 <p align="center">
-  <em>James Goss</em>
+  <em>Lisa Gorman &nbsp;&nbsp;&nbsp; Achal Singh &nbsp;&nbsp;&nbsp; James Goss</em>
 </p>
 
 ---
