@@ -88,7 +88,7 @@ Pairs trading is a **relative-value** strategy. Instead of predicting whether th
 To assess whether this was viable, I first examined the cross-asset correlation structure.
 
 <p align="center">
-  <img src="plots/correlation_matrix.png" width="500">
+  <img src="plots/01_correlation_matrix.png" width="500">
 </p>
 
 <p align="center">
@@ -135,7 +135,7 @@ Given this, I decided not to proceed with deeper analysis such as formal cointeg
 Momentum assumes that assets with strong recent performance continue to outperform over a given horizon (and weak performers continue to lag). In this market, the key question was whether returns showed enough short-term persistence to make momentum signals meaningful, rather than pure noise.
 
 <p align="center">
-  <img src="plots/cumulative_returns.png" width="520">
+  <img src="plots/04_cumulative_returns.png" width="520">
 </p>
 
 <p align="center">
@@ -149,7 +149,7 @@ Figure 2 shows that while the equal-weight index does not exhibit a strong, sust
 To test whether directional moves tend to persist, I examined the autocorrelation of daily market returns.
 
 <p align="center">
-  <img src="plots/market_return_acf.png" width="520">
+  <img src="plots/05_market_acf.png" width="520">
 </p>
 
 <p align="center">
@@ -206,7 +206,19 @@ A common mean reversion variant is to fade “extreme” days, expecting them to
 
 ### Cross-sectional evidence: weak and inconsistent mean reversion
 
-At the single-name level, Figure Z shows that lag-1 dependence is mostly **near zero**, with a mild tilt to **positive** coefficients and only a smaller subset of negative values. That pattern suggests any mean reversion effect is not broad-based across the universe. If mean reversion exists, it is likely limited to a subset of instruments or requires a more specific trigger than “price moved a lot.”
+Figure Z shows how much each stock’s return today depends on its return yesterday.
+
+- If the AR(1) coefficient (φ) is **positive**, the stock tends to continue in the same direction (momentum).
+- If φ is **negative**, the stock tends to reverse direction (mean reversion).
+- If φ is **close to zero**, yesterday’s move has little to no predictive power.
+
+In the graph, most stocks cluster near zero with a slight positive tilt. This means:
+
+- There is no strong universal mean-reversion effect.
+- A small amount of short-term continuation is present in some names.
+- Any mean-reversion strategy would need to be selective rather than applied broadly.
+
+In simple terms: yesterday’s move usually doesn’t strongly predict today’s move — and when it does, it slightly favors continuation rather than reversal.
 
 ### Conclusion
 
@@ -218,21 +230,192 @@ Across both the market proxy and the cross-section, the diagnostics do not suppo
 
 ## 1.4 Volatility & Regimes
 
-Volatility and correlation often define regimes in which strategies behave very differently.
+This section looks at how the market’s volatility and short-term return behaviour change over time, and what that tells us about different regimes.
 
-### Signals explored
-- rolling annualized volatility
-- rolling average pairwise correlation
-- long-term trend filter (price vs MA-200)
-- distributional shifts (skew, kurtosis)
+---
 
-### How regimes were used
-- scaling position sizes
-- tightening or loosening thresholds
-- disabling strategies during stress regimes
+### 1.4.1 Overall level of volatility
 
-**Key takeaway:**  
-Conditioning signals on volatility and trend regimes significantly improved stability and reduced drawdowns.
+First I looked at the distribution of rolling volatility across all stocks and days.
+
+<p align="center">
+  <img src="plots/03_rolling_vol_hist.png" width="520">
+</p>
+
+<p align="center">
+  <em>Figure 4. Histogram of 100-day annualised volatility for all stock–day pairs.</em>
+</p>
+
+**How to read it**
+
+- Each bar counts how many observations had a given 100-day volatility level.
+- Most observations sit between roughly **8% and 22%** annualised volatility.
+- The shape is not a single sharp peak – there are several “humps”, which suggests the market moves through quieter and busier periods.
+
+So the universe is not extremely wild, but volatility is clearly **not constant**.
+
+---
+
+### 1.4.2 Volatility across days and across stocks
+
+Next I checked how volatility changes **over time** (market-wide) and **between stocks**.
+
+<p align="center">
+  <img src="plots/09_cross_sectional_vol_distribution.png" width="520">
+</p>
+
+<p align="center">
+  <em>Figure 5. Distribution of cross-sectional average 100-day volatility (average across all stocks per day).</em>
+</p>
+
+<p align="center">
+  <img src="plots/10_avg_vol_distribution.png" width="520">
+</p>
+
+<p align="center">
+  <em>Figure 6. Distribution of average 100-day volatility by stock.</em>
+</p>
+
+**What they show**
+
+- **By day (Figure 5)**: the cross-sectional average volatility moves around, but the spread is fairly tight. On most days, the “typical” stock is in a similar volatility band.
+- **By stock (Figure 6)**: some names are much more volatile than others over the full sample. There is a clear range from steady stocks to very jumpy ones.
+
+This tells us two things:
+
+1. There is a **market-level volatility state** that slowly changes over time.
+2. There is stable **cross-sectional dispersion**, with some stocks naturally riskier than others.
+
+---
+
+### 1.4.3 Volatility regimes over time
+
+To see how volatility evolves, I looked at a **100-day rolling volatility** of the equal-weight index and marked simple low- and high-volatility bands.
+
+<p align="center">
+  <img src="plots/15_market_rolling_vol_regimes.png" width="720">
+</p>
+
+<p align="center">
+  <em>Figure 7. 100-day rolling volatility of the equal-weight index, with 20th and 80th percentile lines.</em>
+</p>
+
+**Reading the graph**
+
+- The blue line is the 100-day rolling volatility.
+- The green dashed line marks the **20th percentile** (low-vol threshold).
+- The red dashed line marks the **80th percentile** (high-vol threshold).
+
+When the blue line is near the green line, the market is in a **calmer regime**. When it is near or above the red line, the market is in a **high-vol regime**.
+
+The plot shows that:
+
+- Volatility clusters: once the market is calm or noisy, it tends to stay that way for a while.
+- The range of volatility is not extreme, but the difference between low and high regimes is still meaningful.
+
+---
+
+### 1.4.4 Short-term autocorrelation: momentum vs mean reversion
+
+Volatility alone does not tell us the direction of returns. To see whether short-term moves tend to **continue** (momentum) or **reverse** (mean reversion), I looked at **rolling autocorrelation** of the market index at different lags.
+
+For each lag, I computed the autocorrelation over a rolling 100-day window:
+
+- Values **above zero** mean that returns tend to have the **same sign** as in the past (momentum).
+- Values **below zero** mean that returns tend to have the **opposite sign** (mean reversion).
+
+The red line is a rough **momentum threshold**; the green line is a **mean-reversion threshold**.
+
+#### Lag 1
+
+<p align="center">
+  <img src="plots/16_market_rolling_acf_lag1.png" width="720">
+</p>
+
+<p align="center">
+  <em>Figure 8. 100-day rolling lag-1 autocorrelation of index returns.</em>
+</p>
+
+- The blue line is **almost always positive**.
+- For long stretches it stays above the red momentum threshold.
+- It rarely comes close to the green mean-reversion line.
+
+This means that, day-to-day, the index shows **strong short-term momentum**.
+
+#### Lag 2
+
+<p align="center">
+  <img src="plots/16_market_rolling_acf_lag2.png" width="720">
+</p>
+
+<p align="center">
+  <em>Figure 9. 100-day rolling lag-2 autocorrelation of index returns.</em>
+</p>
+
+- Lag-2 autocorrelation is also usually positive.
+- It spends a fair amount of time at or above the momentum threshold, although values are smaller than for lag-1.
+
+So momentum carries some information over **two days**, but weakens compared with lag-1.
+
+#### Lag 5
+
+<p align="center">
+  <img src="plots/16_market_rolling_acf_lag5.png" width="720">
+</p>
+
+<p align="center">
+  <em>Figure 10. 100-day rolling lag-5 autocorrelation of index returns.</em>
+</p>
+
+- Around lag-5, the line is much closer to zero.
+- It moves above and below zero and rarely touches the thresholds.
+
+This suggests that by around **five days**, the clear memory in returns has faded. Momentum is weaker and less stable.
+
+#### Lag 10
+
+<p align="center">
+  <img src="plots/16_market_rolling_acf_lag10.png" width="720">
+</p>
+
+<p align="center">
+  <em>Figure 11. 100-day rolling lag-10 autocorrelation of index returns.</em>
+</p>
+
+- Lag-10 autocorrelation fluctuates around zero.
+- It almost never reaches the momentum or mean-reversion thresholds.
+
+This indicates **very little predictable structure** at this horizon – returns at a 10-day distance look close to independent.
+
+---
+
+### 1.4.6 Conclusions on volatility and regimes
+
+Putting all of this together:
+
+1. **Volatility varies over time.**  
+   The index 100-day volatility moves between low and high bands, forming clear volatility regimes. Volatility also clusters: calm periods and noisy periods tend to come in blocks rather than switching every few days.
+
+2. **Stocks have different baseline risk.**  
+   Some names are naturally more volatile than others. Treating all stocks as if they have the same risk would be misleading.
+
+3. **Short-term momentum is strongest at very short lags.**  
+   The rolling autocorrelation plots show clear positive dependence at 1–2 day lags. By 5–10 days, the signal is much weaker and often indistinguishable from noise.
+
+4. **Mean reversion is not a dominant feature at daily horizons.**  
+   Autocorrelation is rarely strongly negative, either for the index or across individual stocks. There are no long periods where the market consistently shows strong bounce-back behaviour.
+
+5. **Regimes can be described by both volatility and autocorrelation.**  
+   - A **high-vol, positive-autocorrelation** regime looks like a strong trend with large swings.  
+   - A **low-vol, positive-autocorrelation** regime is calmer but still directional.  
+   - Periods where autocorrelation is near zero look more like **noise-dominated** markets, where simple directional bets are harder to justify.
+
+These observations suggest that any strategy in this universe should:
+
+- be aware that **risk changes over time**,  
+- respect the fact that **short-term momentum exists but fades quickly**, and  
+- be cautious about relying on **daily mean reversion**, which is weak and inconsistent in the data.
+
 
 ---
 
